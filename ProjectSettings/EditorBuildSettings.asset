@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/MainMenu.unity
+    guid: 75b70a723a49ae74ca42c3b3d0644b4d
+  - enabled: 1
+    path: Assets/Scenes/TeamSelect.unity
+    guid: 41956d3d2e34bf175971cd55e2cdd975
+  - enabled: 1
+    path: Assets/Scenes/Game.unity
+    guid: 301c7b8475cd457c4946dc896b51a7c4
+  m_configObjects: {}
+  m_UseUCBPForAssetBundles: 0

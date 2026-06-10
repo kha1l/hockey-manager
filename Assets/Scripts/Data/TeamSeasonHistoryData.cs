@@ -1,0 +1,16 @@
+using System;
+
+[Serializable]
+public class TeamSeasonHistoryData
+{
+    public string TeamId;
+    public string TeamName;
+    public int GamesPlayed;
+    public int Wins;
+    public int Losses;
+    public int OvertimeLosses;
+    public int GoalsFor;
+    public int GoalsAgainst;
+    public int Points;
+    public int FinalRank;
+}

@@ -1,0 +1,332 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+public static class SeasonGenerator
+{
+    public const int CurrentScheduleVersion = 4;
+    public const int TargetGamesPerTeam = SalaryCapConfig.TargetGamesPerTeam;
+    private const int MaxGamesPerDay = 16;
+
+    public static SeasonData CreateSimpleSeason(string selectedTeamId, List<TeamData> teams)
+    {
+        return CreateSimpleSeason(selectedTeamId, teams, SalaryCapConfig.RulesSeasonStartYear);
+    }
+
+    public static SeasonData CreateSimpleSeason(string selectedTeamId, List<TeamData> teams, int seasonStartYear)
+    {
+        SeasonData season = new SeasonData
+        {
+            SeasonYear = seasonStartYear,
+            ScheduleVersion = CurrentScheduleVersion,
+            TargetGamesPerTeam = TargetGamesPerTeam,
+            CurrentDay = 1,
+            CurrentGameIndex = 0,
+            IsSeasonFinished = false
+        };
+
+        List<TeamData> sortedTeams = GetSortedTeams(teams);
+        StandingsService.EnsureStandings(season, sortedTeams);
+
+        Dictionary<string, int> homeGamesByTeam = CreateCounter(sortedTeams);
+        int gameNumber = 1;
+
+        for (int i = 0; i < sortedTeams.Count; i++)
+        {
+            for (int j = i + 1; j < sortedTeams.Count; j++)
+            {
+                TeamData firstTeam = sortedTeams[i];
+                TeamData secondTeam = sortedTeams[j];
+                int gamesBetweenTeams = GetGamesBetweenTeams(firstTeam, secondTeam, sortedTeams);
+
+                AddPairGames(season, firstTeam, secondTeam, gamesBetweenTeams, homeGamesByTeam, ref gameNumber);
+            }
+        }
+
+        AssignGameDays(season);
+        ValidateSchedule(season, sortedTeams);
+
+        return season;
+    }
+
+    private static void AddPairGames(
+        SeasonData season,
+        TeamData firstTeam,
+        TeamData secondTeam,
+        int gamesBetweenTeams,
+        Dictionary<string, int> homeGamesByTeam,
+        ref int gameNumber)
+    {
+        if (gamesBetweenTeams == 2)
+        {
+            AddGame(season, firstTeam, secondTeam, homeGamesByTeam, ref gameNumber);
+            AddGame(season, secondTeam, firstTeam, homeGamesByTeam, ref gameNumber);
+            return;
+        }
+
+        if (gamesBetweenTeams == 3)
+        {
+            AddGame(season, firstTeam, secondTeam, homeGamesByTeam, ref gameNumber);
+            AddGame(season, secondTeam, firstTeam, homeGamesByTeam, ref gameNumber);
+
+            TeamData extraHomeTeam = homeGamesByTeam[firstTeam.Id] <= homeGamesByTeam[secondTeam.Id]
+                ? firstTeam
+                : secondTeam;
+            TeamData extraAwayTeam = extraHomeTeam == firstTeam ? secondTeam : firstTeam;
+
+            AddGame(season, extraHomeTeam, extraAwayTeam, homeGamesByTeam, ref gameNumber);
+            return;
+        }
+
+        AddGame(season, firstTeam, secondTeam, homeGamesByTeam, ref gameNumber);
+        AddGame(season, secondTeam, firstTeam, homeGamesByTeam, ref gameNumber);
+        AddGame(season, firstTeam, secondTeam, homeGamesByTeam, ref gameNumber);
+        AddGame(season, secondTeam, firstTeam, homeGamesByTeam, ref gameNumber);
+    }
+
+    private static void AddGame(
+        SeasonData season,
+        TeamData homeTeam,
+        TeamData awayTeam,
+        Dictionary<string, int> homeGamesByTeam,
+        ref int gameNumber)
+    {
+        season.Schedule.Add(new ScheduleGameData
+        {
+            GameId = Guid.NewGuid().ToString("N"),
+            GameNumber = gameNumber,
+            DayNumber = 0,
+            HomeTeamId = homeTeam.Id,
+            AwayTeamId = awayTeam.Id,
+            HomeTeamName = GetTeamDisplayName(homeTeam),
+            AwayTeamName = GetTeamDisplayName(awayTeam),
+            IsPlayed = false,
+            Result = null
+        });
+
+        homeGamesByTeam[homeTeam.Id]++;
+        gameNumber++;
+    }
+
+    private static int GetGamesBetweenTeams(TeamData firstTeam, TeamData secondTeam, List<TeamData> teams)
+    {
+        if (!TeamStructureService.IsSameConference(firstTeam.Id, secondTeam.Id))
+        {
+            return 2;
+        }
+
+        if (TeamStructureService.IsSameDivision(firstTeam.Id, secondTeam.Id))
+        {
+            return IsThreeGameDivisionPair(firstTeam.Id, secondTeam.Id, teams) ? 3 : 4;
+        }
+
+        return IsFourGameConferencePair(firstTeam.Id, secondTeam.Id, teams) ? 4 : 3;
+    }
+
+    private static bool IsThreeGameDivisionPair(string firstTeamId, string secondTeamId, List<TeamData> teams)
+    {
+        string division = TeamStructureService.GetDivision(firstTeamId);
+        List<string> divisionTeamIds = GetDivisionTeamIds(teams, division);
+        int firstIndex = divisionTeamIds.IndexOf(firstTeamId);
+        int secondIndex = divisionTeamIds.IndexOf(secondTeamId);
+
+        if (firstIndex < 0 || secondIndex < 0)
+        {
+            return false;
+        }
+
+        int distance = Math.Abs(firstIndex - secondIndex);
+        return distance == 1 || distance == divisionTeamIds.Count - 1;
+    }
+
+    private static bool IsFourGameConferencePair(string firstTeamId, string secondTeamId, List<TeamData> teams)
+    {
+        string firstDivision = TeamStructureService.GetDivision(firstTeamId);
+        string secondDivision = TeamStructureService.GetDivision(secondTeamId);
+
+        if (string.Compare(firstDivision, secondDivision, StringComparison.Ordinal) > 0)
+        {
+            string tempTeamId = firstTeamId;
+            firstTeamId = secondTeamId;
+            secondTeamId = tempTeamId;
+
+            string tempDivision = firstDivision;
+            firstDivision = secondDivision;
+            secondDivision = tempDivision;
+        }
+
+        List<string> firstDivisionTeams = GetDivisionTeamIds(teams, firstDivision);
+        List<string> secondDivisionTeams = GetDivisionTeamIds(teams, secondDivision);
+        int firstIndex = firstDivisionTeams.IndexOf(firstTeamId);
+        int secondIndex = secondDivisionTeams.IndexOf(secondTeamId);
+
+        if (firstIndex < 0 || secondIndex < 0 || firstDivisionTeams.Count == 0)
+        {
+            return false;
+        }
+
+        return secondIndex == firstIndex || secondIndex == (firstIndex + 1) % firstDivisionTeams.Count;
+    }
+
+    private static void AssignGameDays(SeasonData season)
+    {
+        season.Schedule.Sort((left, right) => left.GameNumber.CompareTo(right.GameNumber));
+
+        Dictionary<int, HashSet<string>> teamsByDay = new Dictionary<int, HashSet<string>>();
+        Dictionary<int, int> gamesByDay = new Dictionary<int, int>();
+
+        foreach (ScheduleGameData game in season.Schedule)
+        {
+            int dayNumber = 1;
+
+            while (!CanPlaceGameOnDay(game, dayNumber, teamsByDay, gamesByDay))
+            {
+                dayNumber++;
+            }
+
+            game.DayNumber = dayNumber;
+
+            if (!teamsByDay.ContainsKey(dayNumber))
+            {
+                teamsByDay[dayNumber] = new HashSet<string>();
+                gamesByDay[dayNumber] = 0;
+            }
+
+            teamsByDay[dayNumber].Add(game.HomeTeamId);
+            teamsByDay[dayNumber].Add(game.AwayTeamId);
+            gamesByDay[dayNumber]++;
+        }
+    }
+
+    private static bool CanPlaceGameOnDay(
+        ScheduleGameData game,
+        int dayNumber,
+        Dictionary<int, HashSet<string>> teamsByDay,
+        Dictionary<int, int> gamesByDay)
+    {
+        if (!teamsByDay.ContainsKey(dayNumber))
+        {
+            return true;
+        }
+
+        return gamesByDay[dayNumber] < MaxGamesPerDay
+            && !teamsByDay[dayNumber].Contains(game.HomeTeamId)
+            && !teamsByDay[dayNumber].Contains(game.AwayTeamId);
+    }
+
+    private static void ValidateSchedule(SeasonData season, List<TeamData> teams)
+    {
+        int expectedGames = teams.Count * TargetGamesPerTeam / 2;
+        if (season.Schedule.Count != expectedGames)
+        {
+            Debug.LogError("Календарь содержит " + season.Schedule.Count + " матчей вместо " + expectedGames);
+        }
+
+        Dictionary<string, int> gamesByTeam = CreateCounter(teams);
+        Dictionary<string, int> homeGamesByTeam = CreateCounter(teams);
+        Dictionary<string, int> awayGamesByTeam = CreateCounter(teams);
+        Dictionary<int, HashSet<string>> teamsByDay = new Dictionary<int, HashSet<string>>();
+        int maxDayNumber = 0;
+
+        foreach (ScheduleGameData game in season.Schedule)
+        {
+            gamesByTeam[game.HomeTeamId]++;
+            gamesByTeam[game.AwayTeamId]++;
+            homeGamesByTeam[game.HomeTeamId]++;
+            awayGamesByTeam[game.AwayTeamId]++;
+            maxDayNumber = Mathf.Max(maxDayNumber, game.DayNumber);
+
+            if (!teamsByDay.ContainsKey(game.DayNumber))
+            {
+                teamsByDay[game.DayNumber] = new HashSet<string>();
+            }
+
+            if (!teamsByDay[game.DayNumber].Add(game.HomeTeamId))
+            {
+                Debug.LogError("Команда играет дважды в день " + game.DayNumber + ": " + game.HomeTeamId);
+            }
+
+            if (!teamsByDay[game.DayNumber].Add(game.AwayTeamId))
+            {
+                Debug.LogError("Команда играет дважды в день " + game.DayNumber + ": " + game.AwayTeamId);
+            }
+        }
+
+        bool allTeamsHaveTargetGames = true;
+        foreach (TeamData team in teams)
+        {
+            if (gamesByTeam[team.Id] != TargetGamesPerTeam)
+            {
+                Debug.LogError(team.Id + " имеет " + gamesByTeam[team.Id] + " матчей вместо " + TargetGamesPerTeam);
+                allTeamsHaveTargetGames = false;
+            }
+
+            if (homeGamesByTeam[team.Id] != TargetGamesPerTeam / 2 || awayGamesByTeam[team.Id] != TargetGamesPerTeam / 2)
+            {
+                Debug.LogWarning(team.Id + " дома/в гостях: " + homeGamesByTeam[team.Id] + "/" + awayGamesByTeam[team.Id]);
+            }
+        }
+
+        Debug.Log("Создан календарь: " + season.Schedule.Count + " матчей, " + maxDayNumber + " игровых дней");
+
+        if (allTeamsHaveTargetGames)
+        {
+            Debug.Log("Каждая команда имеет " + TargetGamesPerTeam + " матча");
+        }
+    }
+
+    private static List<TeamData> GetSortedTeams(List<TeamData> teams)
+    {
+        List<TeamData> sortedTeams = new List<TeamData>();
+
+        if (teams != null)
+        {
+            foreach (TeamData team in teams)
+            {
+                if (team != null)
+                {
+                    sortedTeams.Add(team);
+                }
+            }
+        }
+
+        sortedTeams.Sort((left, right) => string.Compare(left.Id, right.Id, StringComparison.Ordinal));
+        return sortedTeams;
+    }
+
+    private static List<string> GetDivisionTeamIds(List<TeamData> teams, string division)
+    {
+        List<string> teamIds = new List<string>();
+
+        foreach (TeamData team in teams)
+        {
+            if (team != null && TeamStructureService.GetDivision(team.Id) == division)
+            {
+                teamIds.Add(team.Id);
+            }
+        }
+
+        teamIds.Sort(StringComparer.Ordinal);
+        return teamIds;
+    }
+
+    private static Dictionary<string, int> CreateCounter(List<TeamData> teams)
+    {
+        Dictionary<string, int> counter = new Dictionary<string, int>();
+
+        foreach (TeamData team in teams)
+        {
+            if (team != null)
+            {
+                counter[team.Id] = 0;
+            }
+        }
+
+        return counter;
+    }
+
+    private static string GetTeamDisplayName(TeamData team)
+    {
+        return team.City + " " + team.Name;
+    }
+}
