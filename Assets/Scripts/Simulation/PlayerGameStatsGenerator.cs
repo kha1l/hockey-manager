@@ -24,9 +24,23 @@ public static class PlayerGameStatsGenerator
         IceTimeService.EnsureUsageForTeam(awayTeam);
         ChemistryService.EnsureChemistryForTeam(homeTeam);
         ChemistryService.EnsureChemistryForTeam(awayTeam);
+        result.EnsurePlayerStats();
 
-        GenerateTeamStats(result, homeTeam, true, gameStats);
-        GenerateTeamStats(result, awayTeam, false, gameStats);
+        TeamGameStatContext homeContext = CreateTeamContext(result, homeTeam, true);
+        TeamGameStatContext awayContext = CreateTeamContext(result, awayTeam, false);
+        List<SimulatedGoalEvent> goalEvents = new List<SimulatedGoalEvent>();
+        List<SimulatedPenaltyEvent> penaltyEvents = new List<SimulatedPenaltyEvent>();
+
+        AddContextStats(homeContext, gameStats);
+        AddContextStats(awayContext, gameStats);
+
+        AssignGoalsAndAssists(homeContext, awayContext, goalEvents);
+        AssignGoalsAndAssists(awayContext, homeContext, goalEvents);
+        AssignShots(homeContext);
+        AssignShots(awayContext);
+        AssignPenaltyMinutes(homeContext, penaltyEvents);
+        AssignPenaltyMinutes(awayContext, penaltyEvents);
+        result.Events = BuildMatchEvents(result, goalEvents, penaltyEvents);
 
         foreach (PlayerGameStatData stat in gameStats)
         {
@@ -41,29 +55,37 @@ public static class PlayerGameStatsGenerator
         return gameStats;
     }
 
-    private static void GenerateTeamStats(MatchResultData result, TeamData team, bool isHomeTeam, List<PlayerGameStatData> gameStats)
+    private static TeamGameStatContext CreateTeamContext(MatchResultData result, TeamData team, bool isHomeTeam)
     {
-        List<PlayerData> skaters = GetSkaters(team);
-        PlayerData startingGoalie = GetStartingGoalie(team);
         int teamGoals = isHomeTeam ? result.HomeScore : result.AwayScore;
         int teamPowerPlayGoals = isHomeTeam ? result.HomePowerPlayGoals : result.AwayPowerPlayGoals;
         int teamPenaltyMinutes = isHomeTeam ? result.HomePenaltyMinutes : result.AwayPenaltyMinutes;
         int teamShots = isHomeTeam ? result.HomeShots : result.AwayShots;
         bool teamWon = result.WinnerTeamId == team.Id;
-        int plusMinus = teamWon ? 1 : -1;
+        List<PlayerData> skaters = GetSkaters(team);
+        PlayerData startingGoalie = GetStartingGoalie(team);
+
+        TeamGameStatContext context = new TeamGameStatContext
+        {
+            Team = team,
+            IsHomeTeam = isHomeTeam,
+            Skaters = skaters,
+            StartingGoalie = startingGoalie,
+            TeamGoals = teamGoals,
+            TeamPowerPlayGoals = teamPowerPlayGoals,
+            TeamPenaltyMinutes = teamPenaltyMinutes,
+            TeamShots = teamShots,
+            TeamWon = teamWon
+        };
 
         List<PlayerGameStatData> skaterStats = new List<PlayerGameStatData>();
         foreach (PlayerData skater in skaters)
         {
             PlayerGameStatData stat = CreateBaseStat(skater, false);
-            stat.PlusMinus = plusMinus;
             skaterStats.Add(stat);
-            gameStats.Add(stat);
         }
 
-        AssignGoalsAndAssists(team, teamGoals, teamPowerPlayGoals, skaters, skaterStats);
-        AssignShots(team, teamShots, skaters, skaterStats);
-        AssignPenaltyMinutes(team, teamPenaltyMinutes, skaters, skaterStats);
+        context.SkaterStats = skaterStats;
 
         if (startingGoalie != null)
         {
@@ -78,13 +100,41 @@ public static class PlayerGameStatsGenerator
             goalieStat.GoalieOvertimeLoss = !teamWon && result.IsOvertime;
             goalieStat.GoalieLoss = !teamWon && !result.IsOvertime;
             goalieStat.Shutout = goalsAgainst == 0;
+            context.GoalieStat = goalieStat;
+        }
 
-            gameStats.Add(goalieStat);
+        return context;
+    }
+
+    private static void AddContextStats(TeamGameStatContext context, List<PlayerGameStatData> gameStats)
+    {
+        if (context == null || gameStats == null)
+        {
+            return;
+        }
+
+        foreach (PlayerGameStatData stat in context.SkaterStats)
+        {
+            gameStats.Add(stat);
+        }
+
+        if (context.GoalieStat != null)
+        {
+            gameStats.Add(context.GoalieStat);
         }
     }
 
-    private static void AssignGoalsAndAssists(TeamData team, int goals, int powerPlayGoals, List<PlayerData> skaters, List<PlayerGameStatData> skaterStats)
+    private static void AssignGoalsAndAssists(
+        TeamGameStatContext scoringContext,
+        TeamGameStatContext defendingContext,
+        List<SimulatedGoalEvent> goalEvents)
     {
+        TeamData team = scoringContext.Team;
+        int goals = scoringContext.TeamGoals;
+        int powerPlayGoals = scoringContext.TeamPowerPlayGoals;
+        List<PlayerData> skaters = scoringContext.Skaters;
+        List<PlayerGameStatData> skaterStats = scoringContext.SkaterStats;
+
         for (int i = 0; i < goals; i++)
         {
             bool isPowerPlayGoal = i < powerPlayGoals;
@@ -108,8 +158,10 @@ public static class PlayerGameStatsGenerator
                 scorerStat.PowerPlayGoals++;
             }
 
-            int assistCount = Random.Range(0, 3);
+            int assistCount = RollAssistCount();
             List<string> excludedPlayerIds = new List<string> { scorer.Id };
+            PlayerData assist1 = null;
+            PlayerData assist2 = null;
 
             for (int assistIndex = 0; assistIndex < assistCount; assistIndex++)
             {
@@ -131,27 +183,83 @@ public static class PlayerGameStatsGenerator
                     }
                 }
 
+                if (assistIndex == 0)
+                {
+                    assist1 = assister;
+                }
+                else if (assistIndex == 1)
+                {
+                    assist2 = assister;
+                }
+
                 excludedPlayerIds.Add(assister.Id);
+            }
+
+            if (!isPowerPlayGoal)
+            {
+                ApplyEvenStrengthPlusMinus(scoringContext, defendingContext, scorer, assist1, assist2);
+            }
+
+            if (goalEvents != null)
+            {
+                goalEvents.Add(new SimulatedGoalEvent
+                {
+                    IsHomeTeam = scoringContext.IsHomeTeam,
+                    Team = scoringContext.Team,
+                    Scorer = scorer,
+                    Assist1 = assist1,
+                    Assist2 = assist2,
+                    IsPowerPlayGoal = isPowerPlayGoal,
+                    GameSecondsElapsed = Random.Range(0, LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds)
+                });
             }
         }
     }
 
-    private static void AssignPenaltyMinutes(TeamData team, int penaltyMinutes, List<PlayerData> skaters, List<PlayerGameStatData> skaterStats)
+    private static void AssignPenaltyMinutes(TeamGameStatContext context, List<SimulatedPenaltyEvent> penaltyEvents)
     {
-        int penalties = Mathf.Max(0, penaltyMinutes / 2);
-        for (int i = 0; i < penalties; i++)
+        TeamData team = context.Team;
+        int penaltyMinutes = context.TeamPenaltyMinutes;
+        List<PlayerData> skaters = context.Skaters;
+        List<PlayerGameStatData> skaterStats = context.SkaterStats;
+        int remainingMinutes = Mathf.Max(0, penaltyMinutes);
+        while (remainingMinutes > 0)
         {
+            int minutes = remainingMinutes >= 5 && Random.value < 0.20f ? 5 : 2;
+            if (remainingMinutes < minutes)
+            {
+                minutes = remainingMinutes;
+            }
+
             PlayerData player = PickWeightedSkater(team, skaters, null, "Penalty");
             PlayerGameStatData stat = player == null ? null : FindStat(skaterStats, player.Id);
             if (stat != null)
             {
-                stat.PenaltyMinutes += 2;
+                stat.PenaltyMinutes += minutes;
             }
+
+            if (penaltyEvents != null && player != null)
+            {
+                penaltyEvents.Add(new SimulatedPenaltyEvent
+                {
+                    Team = team,
+                    Offender = player,
+                    Reason = GetPenaltyReason(),
+                    Minutes = minutes,
+                    GameSecondsElapsed = Random.Range(0, LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds)
+                });
+            }
+
+            remainingMinutes -= minutes;
         }
     }
 
-    private static void AssignShots(TeamData team, int shots, List<PlayerData> skaters, List<PlayerGameStatData> skaterStats)
+    private static void AssignShots(TeamGameStatContext context)
     {
+        TeamData team = context.Team;
+        int shots = context.TeamShots;
+        List<PlayerData> skaters = context.Skaters;
+        List<PlayerGameStatData> skaterStats = context.SkaterStats;
         for (int i = 0; i < shots; i++)
         {
             PlayerData shooter = PickWeightedSkater(team, skaters, null, "Shot");
@@ -168,13 +276,306 @@ public static class PlayerGameStatsGenerator
         }
     }
 
+    private static int RollAssistCount()
+    {
+        float roll = Random.value;
+        if (roll < 0.65f)
+        {
+            return 2;
+        }
+
+        return roll < 0.90f ? 1 : 0;
+    }
+
+    private static void ApplyEvenStrengthPlusMinus(
+        TeamGameStatContext scoringContext,
+        TeamGameStatContext defendingContext,
+        PlayerData scorer,
+        PlayerData assist1,
+        PlayerData assist2)
+    {
+        List<PlayerData> scoringPlayers = PickEvenStrengthSkaters(scoringContext, scorer, assist1, assist2);
+        List<PlayerData> defendingPlayers = PickEvenStrengthSkaters(defendingContext, null, null, null);
+
+        foreach (PlayerData player in scoringPlayers)
+        {
+            PlayerGameStatData stat = FindStat(scoringContext.SkaterStats, player == null ? "" : player.Id);
+            if (stat != null)
+            {
+                stat.PlusMinus++;
+            }
+        }
+
+        foreach (PlayerData player in defendingPlayers)
+        {
+            PlayerGameStatData stat = FindStat(defendingContext.SkaterStats, player == null ? "" : player.Id);
+            if (stat != null)
+            {
+                stat.PlusMinus--;
+            }
+        }
+    }
+
+    private static List<PlayerData> PickEvenStrengthSkaters(
+        TeamGameStatContext context,
+        PlayerData locked1,
+        PlayerData locked2,
+        PlayerData locked3)
+    {
+        List<PlayerData> players = new List<PlayerData>();
+        AddUniquePlayer(players, locked1);
+        AddUniquePlayer(players, locked2);
+        AddUniquePlayer(players, locked3);
+
+        List<string> excludedPlayerIds = new List<string>();
+        foreach (PlayerData player in players)
+        {
+            if (player != null)
+            {
+                excludedPlayerIds.Add(player.Id);
+            }
+        }
+
+        while (players.Count < LiveMatchConfig.RegulationSkaters)
+        {
+            PlayerData player = PickWeightedSkater(context.Team, context.Skaters, excludedPlayerIds, "Shift");
+            if (player == null)
+            {
+                break;
+            }
+
+            players.Add(player);
+            excludedPlayerIds.Add(player.Id);
+        }
+
+        return players;
+    }
+
+    private static void AddUniquePlayer(List<PlayerData> players, PlayerData player)
+    {
+        if (players == null || player == null || player.Position == "G")
+        {
+            return;
+        }
+
+        foreach (PlayerData existing in players)
+        {
+            if (existing != null && existing.Id == player.Id)
+            {
+                return;
+            }
+        }
+
+        players.Add(player);
+    }
+
+    private static List<LiveMatchEventData> BuildMatchEvents(
+        MatchResultData result,
+        List<SimulatedGoalEvent> goalEvents,
+        List<SimulatedPenaltyEvent> penaltyEvents)
+    {
+        List<LiveMatchEventData> events = new List<LiveMatchEventData>();
+        if (goalEvents == null)
+        {
+            goalEvents = new List<SimulatedGoalEvent>();
+        }
+
+        if (penaltyEvents == null)
+        {
+            penaltyEvents = new List<SimulatedPenaltyEvent>();
+        }
+
+        goalEvents.Sort(CompareGoalEvents);
+        penaltyEvents.Sort(ComparePenaltyEvents);
+
+        int homeScore = 0;
+        int awayScore = 0;
+        foreach (SimulatedGoalEvent goalEvent in goalEvents)
+        {
+            if (goalEvent.IsHomeTeam)
+            {
+                homeScore++;
+            }
+            else
+            {
+                awayScore++;
+            }
+
+            LiveMatchEventData matchEvent = CreateTimedEvent(goalEvent.GameSecondsElapsed);
+            matchEvent.EventType = "Goal";
+            matchEvent.TeamId = goalEvent.Team == null ? "" : goalEvent.Team.Id;
+            matchEvent.TeamName = TeamIdentityService.GetDisplayName(goalEvent.Team);
+            matchEvent.PlayerId = goalEvent.Scorer == null ? "" : goalEvent.Scorer.Id;
+            matchEvent.PlayerName = GetPlayerName(goalEvent.Scorer);
+            matchEvent.Assist1PlayerId = goalEvent.Assist1 == null ? "" : goalEvent.Assist1.Id;
+            matchEvent.Assist1PlayerName = GetPlayerName(goalEvent.Assist1);
+            matchEvent.Assist2PlayerId = goalEvent.Assist2 == null ? "" : goalEvent.Assist2.Id;
+            matchEvent.Assist2PlayerName = GetPlayerName(goalEvent.Assist2);
+            matchEvent.HomeScoreAfter = homeScore;
+            matchEvent.AwayScoreAfter = awayScore;
+            matchEvent.Importance = 5;
+            matchEvent.Description = FormatGoalDescription(
+                matchEvent.TeamName,
+                matchEvent.PlayerName,
+                homeScore,
+                awayScore,
+                matchEvent.PeriodLabel,
+                matchEvent.ClockLabel,
+                goalEvent.IsPowerPlayGoal,
+                false,
+                matchEvent.Assist1PlayerName,
+                matchEvent.Assist2PlayerName);
+            events.Add(matchEvent);
+        }
+
+        foreach (SimulatedPenaltyEvent penaltyEvent in penaltyEvents)
+        {
+            LiveMatchEventData matchEvent = CreateTimedEvent(penaltyEvent.GameSecondsElapsed);
+            matchEvent.EventType = "Penalty";
+            matchEvent.TeamId = penaltyEvent.Team == null ? "" : penaltyEvent.Team.Id;
+            matchEvent.TeamName = TeamIdentityService.GetDisplayName(penaltyEvent.Team);
+            matchEvent.PlayerId = penaltyEvent.Offender == null ? "" : penaltyEvent.Offender.Id;
+            matchEvent.PlayerName = GetPlayerName(penaltyEvent.Offender);
+            matchEvent.Importance = 3;
+            matchEvent.Description = "Удаление " + matchEvent.TeamName
+                + ": " + matchEvent.PlayerName
+                + ", " + penaltyEvent.Minutes + " минут (" + penaltyEvent.Reason + ")";
+            events.Add(matchEvent);
+        }
+
+        events.Sort(CompareEventsAscending);
+        return events;
+    }
+
+    public static string FormatGoalDescription(
+        string teamName,
+        string scorerName,
+        int homeScore,
+        int awayScore,
+        string periodLabel,
+        string clockLabel,
+        bool isPowerPlayGoal,
+        bool isShortHandedGoal,
+        string assist1Name,
+        string assist2Name)
+    {
+        string strengthText = "";
+        if (isPowerPlayGoal)
+        {
+            strengthText = " в большинстве";
+        }
+        else if (isShortHandedGoal)
+        {
+            strengthText = " в меньшинстве";
+        }
+
+        string assists = FormatAssists(assist1Name, assist2Name);
+        return periodLabel + " " + clockLabel
+            + " \u0413\u041e\u041b " + teamName
+            + " (" + homeScore + ":" + awayScore + ") "
+            + scorerName
+            + strengthText
+            + assists;
+    }
+
+    public static string FormatAssists(string assist1Name, string assist2Name)
+    {
+        List<string> assists = new List<string>();
+        if (!string.IsNullOrEmpty(assist1Name))
+        {
+            assists.Add(assist1Name);
+        }
+
+        if (!string.IsNullOrEmpty(assist2Name))
+        {
+            assists.Add(assist2Name);
+        }
+
+        if (assists.Count == 0)
+        {
+            return " (без ассистентов)";
+        }
+
+        return " (ассистенты: " + string.Join(", ", assists.ToArray()) + ")";
+    }
+
+    private static LiveMatchEventData CreateTimedEvent(int gameSecondsElapsed)
+    {
+        int regulationSeconds = LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds;
+        gameSecondsElapsed = Mathf.Clamp(gameSecondsElapsed, 0, Mathf.Max(0, regulationSeconds - 1));
+        int period = Mathf.Clamp(gameSecondsElapsed / LiveMatchConfig.RegulationPeriodSeconds + 1, 1, LiveMatchConfig.RegulationPeriods);
+        int elapsedInPeriod = gameSecondsElapsed % LiveMatchConfig.RegulationPeriodSeconds;
+        int secondsRemaining = LiveMatchConfig.RegulationPeriodSeconds - elapsedInPeriod;
+
+        return new LiveMatchEventData
+        {
+            Period = period,
+            PeriodLabel = FormatPeriodLabel(period),
+            GameSecondsElapsed = gameSecondsElapsed,
+            PeriodSecondsRemaining = secondsRemaining,
+            ClockLabel = LiveMatchConfig.FormatClock(secondsRemaining)
+        };
+    }
+
+    private static string FormatPeriodLabel(int period)
+    {
+        if (period == 1)
+        {
+            return "1st";
+        }
+
+        if (period == 2)
+        {
+            return "2nd";
+        }
+
+        return period == 3 ? "3rd" : "OT";
+    }
+
+    private static string GetPenaltyReason()
+    {
+        string[] reasons =
+        {
+            "подножка",
+            "задержка соперника",
+            "задержка клюшкой",
+            "толчок клюшкой",
+            "грубость",
+            "атака игрока без шайбы",
+            "удар клюшкой"
+        };
+
+        return reasons[Random.Range(0, reasons.Length)];
+    }
+
+    private static int CompareGoalEvents(SimulatedGoalEvent left, SimulatedGoalEvent right)
+    {
+        return left.GameSecondsElapsed.CompareTo(right.GameSecondsElapsed);
+    }
+
+    private static int ComparePenaltyEvents(SimulatedPenaltyEvent left, SimulatedPenaltyEvent right)
+    {
+        return left.GameSecondsElapsed.CompareTo(right.GameSecondsElapsed);
+    }
+
+    private static int CompareEventsAscending(LiveMatchEventData left, LiveMatchEventData right)
+    {
+        int timeComparison = left.GameSecondsElapsed.CompareTo(right.GameSecondsElapsed);
+        if (timeComparison != 0)
+        {
+            return timeComparison;
+        }
+
+        return right.Importance.CompareTo(left.Importance);
+    }
+
     private static PlayerGameStatData CreateBaseStat(PlayerData player, bool isGoalie)
     {
         return new PlayerGameStatData
         {
             PlayerId = player.Id,
             TeamId = player.TeamId,
-            PlayerName = player.FirstName + " " + player.LastName,
+            PlayerName = GetPlayerName(player),
             Position = player.Position,
             IsGoalie = isGoalie,
             TimeOnIceSeconds = GetStatTimeOnIce(player, isGoalie)
@@ -687,5 +1088,51 @@ public static class PlayerGameStatsGenerator
         }
 
         return null;
+    }
+
+    private static string GetPlayerName(PlayerData player)
+    {
+        if (player == null)
+        {
+            return "";
+        }
+
+        string number = player.JerseyNumber > 0 ? "#" + player.JerseyNumber + " " : "";
+        return number + player.FirstName + " " + player.LastName;
+    }
+
+    private class TeamGameStatContext
+    {
+        public TeamData Team;
+        public bool IsHomeTeam;
+        public List<PlayerData> Skaters = new List<PlayerData>();
+        public PlayerData StartingGoalie;
+        public int TeamGoals;
+        public int TeamPowerPlayGoals;
+        public int TeamPenaltyMinutes;
+        public int TeamShots;
+        public bool TeamWon;
+        public List<PlayerGameStatData> SkaterStats = new List<PlayerGameStatData>();
+        public PlayerGameStatData GoalieStat;
+    }
+
+    private class SimulatedGoalEvent
+    {
+        public bool IsHomeTeam;
+        public TeamData Team;
+        public PlayerData Scorer;
+        public PlayerData Assist1;
+        public PlayerData Assist2;
+        public bool IsPowerPlayGoal;
+        public int GameSecondsElapsed;
+    }
+
+    private class SimulatedPenaltyEvent
+    {
+        public TeamData Team;
+        public PlayerData Offender;
+        public string Reason;
+        public int Minutes;
+        public int GameSecondsElapsed;
     }
 }

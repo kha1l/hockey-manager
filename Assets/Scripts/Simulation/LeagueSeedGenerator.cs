@@ -116,7 +116,120 @@ public static class LeagueSeedGenerator
             players.Add(CreatePlayer(identity, teamIndex, teamBonus, slot, i + 1, random));
         }
 
+        AddBelgorodProspect(identity, players);
         return players;
+    }
+
+    private static void AddBelgorodProspect(TeamIdentityData identity, List<PlayerData> players)
+    {
+        if (identity == null || identity.TeamId != "belgorod_lions" || players == null)
+        {
+            return;
+        }
+
+        foreach (PlayerData existing in players)
+        {
+            if (existing != null && existing.JerseyNumber == 89)
+            {
+                existing.JerseyNumber = 88;
+            }
+        }
+
+        PlayerData player = new PlayerData
+        {
+            Id = identity.TeamId + "-aleksey-kharlanov",
+            FirstName = "Aleksey",
+            LastName = "Kharlanov",
+            Nationality = "Russia",
+            TeamId = identity.TeamId,
+            Position = "RW",
+            Age = 18,
+            Overall = 74,
+            Potential = 97,
+            Salary = 950000,
+            ContractYearsRemaining = 3,
+            ContractStatus = "Signed",
+            HasNoTradeClause = false,
+            IsGeneratedContract = true,
+            IsEntryLevelContract = true,
+            SourceProspectId = "",
+            DraftRound = 0,
+            DraftPickOverall = 0,
+            LastSeasonOverall = 74,
+            LastSeasonPotential = 97,
+            LastDevelopmentDelta = 0,
+            LastDevelopmentType = "",
+            Condition = FatigueConfig.DefaultCondition,
+            Fatigue = FatigueConfig.DefaultFatigue,
+            ConsecutiveGamesPlayed = 0,
+            GamesRested = 0,
+            IsResting = false,
+            LastGameFatigueChange = 0,
+            LastGameConditionChange = 0,
+            IsInjured = false,
+            InjuryType = "",
+            InjurySeverity = "",
+            InjuryDaysRemaining = 0,
+            CanPlayThroughInjury = false,
+            InjuredAtUtc = "",
+            ExpectedReturnDate = "",
+            TotalInjuries = 0,
+            RosterStatus = RosterStatusConfig.NHL,
+            PreviousRosterStatus = RosterStatusConfig.NHL,
+            RosterStatusUpdatedAtUtc = SeedCreatedAtUtc,
+            WaiverStatus = WaiverConfig.WaiverStatusNone,
+            WaiverPlacedAtUtc = "",
+            WaiverExpiresAtUtc = "",
+            WaiverOriginalTeamId = "",
+            WaiverOriginalTeamName = "",
+            WaiverIntendedDestination = "",
+            CareerAwardIds = new List<string>(),
+            JerseyNumber = 89
+        };
+
+        PlayerDevelopmentService.EnsureDevelopmentProfile(player);
+        player.HiddenCeiling = 99;
+        player.HiddenFloor = 82;
+        player.DevelopmentRisk = 12;
+        player.BoomChance = 28;
+        player.BustChance = 3;
+        player.DevelopmentType = "Elite";
+        player.DevelopmentTypeHint = "Huge potential";
+        PlayerFatigueService.EnsureFatigueFields(player);
+        InjuryService.EnsureInjuryFields(player);
+        PlayerRoleService.EnsureRole(player);
+        player.PlayerRole = "Sniper";
+        player.UsageCategory = "ThirdLine";
+        LeadershipService.EnsurePlayerLeadershipProfile(player);
+        WaiverEligibilityService.EnsureWaiverEligibility(player);
+        MoveWeakestRightWingToFarm(players);
+        players.Add(player);
+    }
+
+    private static void MoveWeakestRightWingToFarm(List<PlayerData> players)
+    {
+        PlayerData weakest = null;
+        foreach (PlayerData candidate in players)
+        {
+            if (candidate == null || candidate.Position != "RW" || candidate.RosterStatus != RosterStatusConfig.NHL)
+            {
+                continue;
+            }
+
+            if (weakest == null || candidate.Overall < weakest.Overall)
+            {
+                weakest = candidate;
+            }
+        }
+
+        if (weakest == null)
+        {
+            return;
+        }
+
+        weakest.RosterStatus = RosterStatusConfig.Farm;
+        weakest.PreviousRosterStatus = RosterStatusConfig.Farm;
+        weakest.UsageCategory = "FourthLine";
     }
 
     private static void InitializeTeamForSeed(TeamData team)

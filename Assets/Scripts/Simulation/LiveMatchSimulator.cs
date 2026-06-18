@@ -93,14 +93,19 @@ public static class LiveMatchSimulator
         string description,
         int importance)
     {
+        int periodSecondsRemaining = GetEventPeriodSecondsRemaining(match, eventType);
+        int gameSecondsElapsed = match == null
+            ? 0
+            : match.TotalGameSecondsElapsed + Mathf.Max(0, match.PeriodSecondsRemaining - periodSecondsRemaining);
+
         return new LiveMatchEventData
         {
             EventType = eventType,
             Period = match == null ? 1 : match.Period,
             PeriodLabel = match == null ? "" : LiveMatchConfig.FormatPeriodLabel(match),
-            GameSecondsElapsed = match == null ? 0 : match.TotalGameSecondsElapsed,
-            PeriodSecondsRemaining = match == null ? 0 : match.PeriodSecondsRemaining,
-            ClockLabel = match == null ? "" : LiveMatchConfig.FormatClock(match.PeriodSecondsRemaining),
+            GameSecondsElapsed = gameSecondsElapsed,
+            PeriodSecondsRemaining = periodSecondsRemaining,
+            ClockLabel = match == null ? "" : LiveMatchConfig.FormatClock(periodSecondsRemaining),
             TeamId = team == null ? "" : team.Id,
             TeamName = TeamIdentityService.GetDisplayName(team),
             PlayerId = player == null ? "" : player.Id,
@@ -193,6 +198,50 @@ public static class LiveMatchSimulator
         }
     }
 
+    private static int GetEventPeriodSecondsRemaining(LiveMatchStateData match, string eventType)
+    {
+        if (match == null)
+        {
+            return 0;
+        }
+
+        if (eventType != "Goal" && eventType != "Penalty")
+        {
+            return match.PeriodSecondsRemaining;
+        }
+
+        int maxOffset = Mathf.Min(LiveMatchConfig.LiveTickGameSeconds - 1, Mathf.Max(0, match.PeriodSecondsRemaining - 1));
+        int offset = maxOffset <= 0 ? 0 : UnityEngine.Random.Range(0, maxOffset + 1);
+        return Mathf.Max(0, match.PeriodSecondsRemaining - offset);
+    }
+
+    private static int RollAssistCount()
+    {
+        float roll = UnityEngine.Random.value;
+        if (roll < 0.65f)
+        {
+            return 2;
+        }
+
+        return roll < 0.90f ? 1 : 0;
+    }
+
+    private static string GetPenaltyReason()
+    {
+        string[] reasons =
+        {
+            "подножка",
+            "задержка соперника",
+            "задержка клюшкой",
+            "толчок клюшкой",
+            "грубость",
+            "атака игрока без шайбы",
+            "удар клюшкой"
+        };
+
+        return reasons[UnityEngine.Random.Range(0, reasons.Length)];
+    }
+
     private static void GenerateTeamPossession(LiveMatchStateData match, TeamData attackingTeam, TeamData defendingTeam, bool attackingHome)
     {
         if (attackingTeam == null || defendingTeam == null)
@@ -230,6 +279,7 @@ public static class LiveMatchSimulator
         float goalChance = 0.082f + ratingDelta * 0.0015f;
         goalChance *= LiveMatchTacticsService.GetGoalModifier(attackingTeam);
         goalChance /= LiveMatchTacticsService.GetDefenseModifier(defendingTeam);
+        goalChance *= 1.10f;
         if (attackStats.PowerPlaySecondsRemaining > 0)
         {
             goalChance += 0.035f;
@@ -246,7 +296,15 @@ public static class LiveMatchSimulator
 
         if (UnityEngine.Random.value < Mathf.Clamp(goalChance, 0.025f, 0.32f))
         {
-            RegisterGoal(match, attackingTeam, defendingTeam, shooter, goalie, attackingHome, attackStats.PowerPlaySecondsRemaining > 0);
+            RegisterGoal(
+                match,
+                attackingTeam,
+                defendingTeam,
+                shooter,
+                goalie,
+                attackingHome,
+                attackStats.PowerPlaySecondsRemaining > 0,
+                attackStats.PenaltyKillSecondsRemaining > 0);
         }
         else
         {
@@ -280,7 +338,8 @@ public static class LiveMatchSimulator
         PlayerData scorer,
         PlayerData goalie,
         bool scoringHome,
-        bool isPowerPlayGoal)
+        bool isPowerPlayGoal,
+        bool isShortHandedGoal)
     {
         LiveMatchTeamStatsData scoringStats = scoringHome ? match.HomeStats : match.AwayStats;
         LiveMatchTeamStatsData defendingStats = scoringHome ? match.AwayStats : match.HomeStats;
@@ -295,8 +354,9 @@ public static class LiveMatchSimulator
             match.AwayStats.Score = match.AwayScore;
         }
 
-        PlayerData assist1 = PickAssist(scoringTeam, scorer);
-        PlayerData assist2 = PickAssist(scoringTeam, scorer, assist1);
+        int assistCount = RollAssistCount();
+        PlayerData assist1 = assistCount >= 1 ? PickAssist(scoringTeam, scorer) : null;
+        PlayerData assist2 = assistCount >= 2 ? PickAssist(scoringTeam, scorer, assist1) : null;
         LiveMatchPlayerStatData scorerStat = GetOrCreatePlayerStat(match, scorer);
         if (scorerStat != null)
         {
@@ -305,9 +365,10 @@ public static class LiveMatchSimulator
         }
 
         AddAssist(match, assist1);
-        if (UnityEngine.Random.value < 0.55f)
+        AddAssist(match, assist2);
+        if (!isPowerPlayGoal && !isShortHandedGoal)
         {
-            AddAssist(match, assist2);
+            ApplyEvenStrengthPlusMinus(match, scoringTeam, defendingTeam, scoringStats.IsGoaliePulled, defendingStats.IsGoaliePulled);
         }
 
         LiveMatchPlayerStatData goalieStat = GetOrCreatePlayerStat(match, goalie);
@@ -319,14 +380,17 @@ public static class LiveMatchSimulator
         if (isPowerPlayGoal)
         {
             scoringStats.PowerPlayGoals++;
-            scoringStats.PowerPlaySecondsRemaining = 0;
-            defendingStats.PenaltyKillSecondsRemaining = 0;
+            if (defendingStats.ActivePenaltyKillPenaltyMinutes <= 2)
+            {
+                scoringStats.PowerPlaySecondsRemaining = 0;
+                scoringStats.ActivePowerPlayPenaltyMinutes = 0;
+                defendingStats.PenaltyKillSecondsRemaining = 0;
+                defendingStats.ActivePenaltyKillPenaltyMinutes = 0;
+            }
         }
 
-        string description = TeamIdentityService.GetDisplayName(scoringTeam)
-            + ": гол, " + GetPlayerName(scorer)
-            + " (" + match.HomeScore + ":" + match.AwayScore + ")";
-        LiveMatchEventData goalEvent = CreateEvent(match, "Goal", scoringTeam, scorer, description, 5);
+        string scoringTeamName = TeamIdentityService.GetDisplayName(scoringTeam);
+        LiveMatchEventData goalEvent = CreateEvent(match, "Goal", scoringTeam, scorer, "", 5);
         goalEvent.Assist1PlayerId = assist1 == null ? "" : assist1.Id;
         goalEvent.Assist1PlayerName = GetPlayerName(assist1);
         goalEvent.Assist2PlayerId = assist2 == null ? "" : assist2.Id;
@@ -335,11 +399,57 @@ public static class LiveMatchSimulator
         goalEvent.GoaliePlayerName = GetPlayerName(goalie);
         goalEvent.HomeScoreAfter = match.HomeScore;
         goalEvent.AwayScoreAfter = match.AwayScore;
+        goalEvent.Description = PlayerGameStatsGenerator.FormatGoalDescription(
+            scoringTeamName,
+            GetPlayerName(scorer),
+            match.HomeScore,
+            match.AwayScore,
+            goalEvent.PeriodLabel,
+            goalEvent.ClockLabel,
+            isPowerPlayGoal,
+            isShortHandedGoal,
+            goalEvent.Assist1PlayerName,
+            goalEvent.Assist2PlayerName);
         AddEvent(match, goalEvent);
 
         if (LiveMatchRulesService.IsSuddenDeathGoal(match))
         {
             CompleteMatch(match, scoringTeam.Id, TeamIdentityService.GetDisplayName(scoringTeam), "SuddenDeathGoal");
+        }
+    }
+
+    private static void ApplyEvenStrengthPlusMinus(
+        LiveMatchStateData match,
+        TeamData scoringTeam,
+        TeamData defendingTeam,
+        bool scoringGoaliePulled,
+        bool defendingGoaliePulled)
+    {
+        AddPlusMinusToSkaters(match, LiveMatchLineSelectorService.SelectSkaters(scoringTeam, match, scoringGoaliePulled), 1);
+        AddPlusMinusToSkaters(match, LiveMatchLineSelectorService.SelectSkaters(defendingTeam, match, defendingGoaliePulled), -1);
+    }
+
+    private static void AddPlusMinusToSkaters(LiveMatchStateData match, List<PlayerData> skaters, int delta)
+    {
+        if (skaters == null)
+        {
+            return;
+        }
+
+        HashSet<string> countedPlayerIds = new HashSet<string>();
+        foreach (PlayerData player in skaters)
+        {
+            if (player == null || player.Position == "G" || countedPlayerIds.Contains(player.Id))
+            {
+                continue;
+            }
+
+            LiveMatchPlayerStatData stat = GetOrCreatePlayerStat(match, player);
+            if (stat != null)
+            {
+                stat.PlusMinus += delta;
+                countedPlayerIds.Add(player.Id);
+            }
         }
     }
 
@@ -354,19 +464,31 @@ public static class LiveMatchSimulator
         PlayerData offender = PickShooter(attackingTeam);
         LiveMatchTeamStatsData offenderStats = attackingHome ? match.HomeStats : match.AwayStats;
         LiveMatchTeamStatsData powerPlayStats = attackingHome ? match.AwayStats : match.HomeStats;
-        offenderStats.PenaltyMinutes += 2;
-        offenderStats.PenaltyKillSecondsRemaining = 120;
-        powerPlayStats.PowerPlaySecondsRemaining = 120;
+        int penaltyMinutes = UnityEngine.Random.value < 0.10f ? 5 : 2;
+        int penaltySeconds = penaltyMinutes * 60;
+        offenderStats.PenaltyMinutes += penaltyMinutes;
+        offenderStats.PenaltyKillSecondsRemaining = penaltySeconds;
+        offenderStats.ActivePenaltyKillPenaltyMinutes = penaltyMinutes;
+        powerPlayStats.PowerPlaySecondsRemaining = penaltySeconds;
+        powerPlayStats.ActivePowerPlayPenaltyMinutes = penaltyMinutes;
         powerPlayStats.PowerPlayOpportunities++;
 
         LiveMatchPlayerStatData stat = GetOrCreatePlayerStat(match, offender);
         if (stat != null)
         {
-            stat.PenaltyMinutes += 2;
+            stat.PenaltyMinutes += penaltyMinutes;
         }
 
-        AddEvent(match, CreateEvent(match, "Penalty", attackingTeam, offender, "Удаление: " + GetPlayerName(offender) + ", 2 минуты", 3));
-        AddEvent(match, CreateEvent(match, "PowerPlayStart", defendingTeam, null, TeamIdentityService.GetDisplayName(defendingTeam) + ": большинство", 2));
+        string reason = GetPenaltyReason();
+        AddEvent(match, CreateEvent(
+            match,
+            "Penalty",
+            attackingTeam,
+            offender,
+            "Удаление " + TeamIdentityService.GetDisplayName(attackingTeam)
+                + ": " + GetPlayerName(offender)
+                + ", " + penaltyMinutes + " минут (" + reason + ")",
+            3));
     }
 
     private static void MaybeInjury(LiveMatchStateData match, TeamData team, PlayerData player)
@@ -462,6 +584,15 @@ public static class LiveMatchSimulator
 
         stats.PowerPlaySecondsRemaining = Mathf.Max(0, stats.PowerPlaySecondsRemaining - LiveMatchConfig.LiveTickGameSeconds);
         stats.PenaltyKillSecondsRemaining = Mathf.Max(0, stats.PenaltyKillSecondsRemaining - LiveMatchConfig.LiveTickGameSeconds);
+        if (stats.PowerPlaySecondsRemaining <= 0)
+        {
+            stats.ActivePowerPlayPenaltyMinutes = 0;
+        }
+
+        if (stats.PenaltyKillSecondsRemaining <= 0)
+        {
+            stats.ActivePenaltyKillPenaltyMinutes = 0;
+        }
     }
 
     private static void AddTimeOnIce(LiveMatchStateData match, TeamData team)
@@ -632,6 +763,12 @@ public static class LiveMatchSimulator
 
     private static string GetPlayerName(PlayerData player)
     {
-        return player == null ? "" : player.FirstName + " " + player.LastName;
+        if (player == null)
+        {
+            return "";
+        }
+
+        string number = player.JerseyNumber > 0 ? "#" + player.JerseyNumber + " " : "";
+        return number + player.FirstName + " " + player.LastName;
     }
 }

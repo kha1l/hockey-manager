@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class CalendarController : MonoBehaviour
 {
+    [SerializeField] private Text _statusText;
     [SerializeField] private Transform _gamesContainer;
     [SerializeField] private ScheduleGameRowView _gameRowPrefab;
 
@@ -12,7 +14,19 @@ public class CalendarController : MonoBehaviour
         _gameRowPrefab = gameRowPrefab;
     }
 
+    public void Configure(Text statusText, Transform gamesContainer, ScheduleGameRowView gameRowPrefab)
+    {
+        _statusText = statusText;
+        Configure(gamesContainer, gameRowPrefab);
+    }
+
     public void ShowCalendar(SeasonData season)
+    {
+        int selectedDay = season == null ? 1 : season.CurrentDay;
+        ShowCalendar(season, selectedDay);
+    }
+
+    public void ShowCalendar(SeasonData season, int selectedDay)
     {
         if (_gamesContainer == null || _gameRowPrefab == null)
         {
@@ -26,6 +40,7 @@ public class CalendarController : MonoBehaviour
         if (season == null)
         {
             Debug.LogWarning("CalendarController: season is not available.");
+            UpdateStatusText("Календарь пока недоступен.");
             return;
         }
 
@@ -33,8 +48,12 @@ public class CalendarController : MonoBehaviour
         List<ScheduleGameData> sortedSchedule = new List<ScheduleGameData>(season.Schedule);
         sortedSchedule.Sort(CompareGames);
 
+        int maxDay = GetMaxDay(sortedSchedule);
+        selectedDay = Mathf.Clamp(selectedDay <= 0 ? season.CurrentDay : selectedDay, 1, Mathf.Max(1, maxDay));
+        UpdateStatusText("Текущий день: " + season.CurrentDay + " | Выбран день: " + selectedDay);
+
         int rowsToShow = UiDisplayLimitConfig.ClampRowCount(sortedSchedule.Count, UiDisplayLimitConfig.MaxCalendarRows);
-        int startIndex = FindFirstVisibleGameIndex(sortedSchedule, season.CurrentDay, rowsToShow);
+        int startIndex = FindFirstVisibleGameIndex(sortedSchedule, selectedDay, rowsToShow);
         for (int i = startIndex; i < sortedSchedule.Count && i < startIndex + rowsToShow; i++)
         {
             ScheduleGameData game = sortedSchedule[i];
@@ -105,5 +124,32 @@ public class CalendarController : MonoBehaviour
     {
         int dayComparison = left.DayNumber.CompareTo(right.DayNumber);
         return dayComparison != 0 ? dayComparison : left.GameNumber.CompareTo(right.GameNumber);
+    }
+
+    private void UpdateStatusText(string value)
+    {
+        if (_statusText != null)
+        {
+            _statusText.text = value;
+        }
+    }
+
+    private static int GetMaxDay(List<ScheduleGameData> schedule)
+    {
+        int maxDay = 1;
+        if (schedule == null)
+        {
+            return maxDay;
+        }
+
+        foreach (ScheduleGameData game in schedule)
+        {
+            if (game != null && game.DayNumber > maxDay)
+            {
+                maxDay = game.DayNumber;
+            }
+        }
+
+        return maxDay;
     }
 }

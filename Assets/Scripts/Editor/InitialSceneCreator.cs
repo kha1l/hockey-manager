@@ -515,11 +515,11 @@ public static class InitialSceneCreator
         Text selectedTeamText = CreateText(parent, "SelectedTeamText", "Команда не выбрана", 23, new Vector2(40f, 646f), new Vector2(720f, 36f));
         Text currentTeamIdentityText = CreateText(parent, "CurrentTeamIdentityText", FictionalLeagueConfig.LeagueDisplayName, 14, new Vector2(40f, 614f), new Vector2(720f, 30f));
         controller.CurrentTeamIdentityText = currentTeamIdentityText;
-        seasonRulesText = CreateText(parent, "SeasonRulesText", "Сезон: 2026-27 | Сезон карьеры: 1 | Игр: 84\nФаза: RegularSeason | Следующий сезон пока недоступен | Архивных сезонов: 0\nРазвитие игроков: 0 изменений за последний сезон\nСостав на матч: валиден\nТактика: Balanced | PP 0 | PK 0", 15, new Vector2(0f, 557f), new Vector2(820f, 138f));
+        seasonRulesText = CreateText(parent, "SeasonRulesText", "Сезон: 2026-27 | Сезон карьеры: 1 | Игр: 84\nАрхивных сезонов: 0\nРазвитие игроков: 0 изменений за последний сезон\nСостав на матч: валиден\nТактика: Balanced | PP 0 | PK 0", 15, new Vector2(0f, 557f), new Vector2(820f, 138f));
         leagueDateText = CreateText(parent, "LeagueDateText", "Дата лиги: 2026-09-28 | Trade deadline: 2027-03-05", 18, new Vector2(0f, 478f), new Vector2(820f, 34f));
         tradeStatusText = CreateText(parent, "TradeStatusText", "Обмены доступны", 18, new Vector2(0f, 446f), new Vector2(820f, 34f));
         freeAgencyStatusText = CreateText(parent, "FreeAgencyStatusText", "Free agency: закрыта", 17, new Vector2(0f, 414f), new Vector2(820f, 34f));
-        currentDayText = CreateText(parent, "CurrentDayText", "Игровой день: 1", 18, new Vector2(0f, 382f), new Vector2(820f, 34f));
+        currentDayText = CreateText(parent, "CurrentDayText", "", 18, new Vector2(0f, 382f), new Vector2(820f, 34f));
         gamesSimulatedText = CreateText(parent, "GamesSimulatedText", "Матчей сыграно в лиге: 0 / 1344", 18, new Vector2(0f, 350f), new Vector2(820f, 34f));
         nextGameText = CreateText(parent, "NextGameText", "Следующий матч: ...", 18, new Vector2(0f, 318f), new Vector2(820f, 34f));
         lastMatchResultText = CreateText(parent, "LastMatchResultText", "Матчей ещё не было", 18, new Vector2(0f, 286f), new Vector2(820f, 34f));
@@ -682,18 +682,23 @@ public static class InitialSceneCreator
 
         CreateText(parent, "Title", "Главная", 40, new Vector2(0f, 705f), new Vector2(760f, 58f));
 
-        Button homeTab = CreateDashboardActionButton(parent, "TopNavHomeButton", "Главная", new Vector2(-315f, 642f), new Vector2(190f, 46f));
+        Button homeTab = CreateDashboardActionButton(parent, "TopNavHomeButton", "Главная", new Vector2(-340f, 642f), new Vector2(150f, 46f));
         UnityEventTools.AddPersistentListener(homeTab.onClick, controller.ShowDashboard);
-        Button teamTab = CreateDashboardActionButton(parent, "TopNavTeamButton", "Команда", new Vector2(-105f, 642f), new Vector2(190f, 46f));
+        Button standingsTab = CreateDashboardActionButton(parent, "TopNavStandingsButton", "Таблица", new Vector2(-170f, 642f), new Vector2(150f, 46f));
+        UnityEventTools.AddPersistentListener(standingsTab.onClick, controller.ShowStandings);
+        Button teamTab = CreateDashboardActionButton(parent, "TopNavTeamButton", "Команда", new Vector2(0f, 642f), new Vector2(150f, 46f));
         UnityEventTools.AddPersistentListener(teamTab.onClick, controller.ShowOrganization);
-        Button statsTab = CreateDashboardActionButton(parent, "TopNavStatsButton", "Статистика", new Vector2(105f, 642f), new Vector2(190f, 46f));
+        Button statsTab = CreateDashboardActionButton(parent, "TopNavStatsButton", "Статистика", new Vector2(170f, 642f), new Vector2(150f, 46f));
         UnityEventTools.AddPersistentListener(statsTab.onClick, controller.ShowPlayerStats);
-        Button rosterTab = CreateDashboardActionButton(parent, "TopNavRosterButton", "Состав", new Vector2(315f, 642f), new Vector2(190f, 46f));
+        Button rosterTab = CreateDashboardActionButton(parent, "TopNavRosterButton", "Состав", new Vector2(340f, 642f), new Vector2(150f, 46f));
         UnityEventTools.AddPersistentListener(rosterTab.onClick, controller.ShowLineup);
         StylePrimaryButton(homeTab, 17);
+        StyleDarkButton(standingsTab, 17);
         StyleDarkButton(teamTab, 17);
         StyleDarkButton(statsTab, 17);
         StyleDarkButton(rosterTab, 17);
+
+        leagueDateText = CreateText(parent, "LeagueDateText", "Дата лиги: ...", 15, new Vector2(0f, 600f), new Vector2(760f, 30f));
 
         GameObject teamCard = CreatePanel(parent, "CompactTeamCard", new Vector2(0f, 500f), new Vector2(840f, 190f));
         teamCard.GetComponent<Image>().color = new Color(0.065f, 0.078f, 0.105f, 0.92f);
@@ -701,8 +706,9 @@ public static class InitialSceneCreator
         controller.CurrentTeamLogoImage = currentTeamLogo;
         Text selectedTeamText = CreateText(teamCard.transform, "SelectedTeamText", "Команда не выбрана", 30, new Vector2(70f, 36f), new Vector2(600f, 58f));
         selectedTeamText.alignment = TextAnchor.MiddleLeft;
-        Text currentTeamIdentityText = CreateText(teamCard.transform, "CurrentTeamIdentityText", FictionalLeagueConfig.LeagueDisplayName, 16, new Vector2(70f, -22f), new Vector2(600f, 44f));
+        Text currentTeamIdentityText = CreateText(teamCard.transform, "CurrentTeamIdentityText", FictionalLeagueConfig.LeagueDisplayName, 15, new Vector2(70f, -28f), new Vector2(600f, 58f));
         currentTeamIdentityText.alignment = TextAnchor.MiddleLeft;
+        currentTeamIdentityText.supportRichText = true;
         controller.CurrentTeamIdentityText = currentTeamIdentityText;
 
         GameObject statsCard = CreatePanel(parent, "TeamStatsCard", new Vector2(-225f, 285f), new Vector2(390f, 205f));
@@ -721,21 +727,20 @@ public static class InitialSceneCreator
         GameObject divisionCard = CreatePanel(parent, "DivisionStandingsCard", new Vector2(-225f, 15f), new Vector2(390f, 300f));
         divisionCard.GetComponent<Image>().color = new Color(0.07f, 0.085f, 0.115f, 0.90f);
         CreateText(divisionCard.transform, "DivisionTitle", "ТАБЛИЦА ДИВИЗИОНА", 16, new Vector2(0f, 118f), new Vector2(340f, 30f));
-        financeText = CreateText(divisionCard.transform, "FinanceText", "1. Команда 0-0-0 0", 15, new Vector2(0f, -22f), new Vector2(340f, 230f));
+        financeText = CreateText(divisionCard.transform, "FinanceText", "1. Команда 0-0-0 0", 12, new Vector2(0f, -22f), new Vector2(340f, 230f));
         financeText.alignment = TextAnchor.UpperLeft;
         financeText.supportRichText = true;
 
         GameObject topPlayersCard = CreatePanel(parent, "TopPlayersCard", new Vector2(225f, 15f), new Vector2(390f, 300f));
         topPlayersCard.GetComponent<Image>().color = new Color(0.07f, 0.085f, 0.115f, 0.90f);
         CreateText(topPlayersCard.transform, "TopPlayersTitle", "ЛУЧШИЕ ИГРОКИ", 16, new Vector2(0f, 118f), new Vector2(340f, 30f));
-        cpuRosterAiText = CreateText(topPlayersCard.transform, "CpuRosterAiText", "1. Игрок", 17, new Vector2(0f, -22f), new Vector2(340f, 230f));
+        cpuRosterAiText = CreateText(topPlayersCard.transform, "CpuRosterAiText", "1. Игрок", 12, new Vector2(0f, -22f), new Vector2(340f, 230f));
         cpuRosterAiText.alignment = TextAnchor.UpperLeft;
 
         GameObject seasonCard = CreatePanel(parent, "SeasonInfoCard", new Vector2(0f, -200f), new Vector2(840f, 120f));
         seasonCard.GetComponent<Image>().color = new Color(0.055f, 0.068f, 0.092f, 0.90f);
-        currentDayText = CreateText(seasonCard.transform, "CurrentDayText", "Игровой день: 1", 16, new Vector2(-275f, 22f), new Vector2(250f, 38f));
-        gamesSimulatedText = CreateText(seasonCard.transform, "GamesSimulatedText", "Матчей: 0 / 0", 16, new Vector2(0f, 22f), new Vector2(270f, 38f));
-        leagueDateText = CreateText(seasonCard.transform, "LeagueDateText", "Дата лиги: ...", 16, new Vector2(275f, 22f), new Vector2(250f, 38f));
+        currentDayText = CreateText(seasonCard.transform, "CurrentDayText", "", 16, new Vector2(-275f, 22f), new Vector2(250f, 38f));
+        gamesSimulatedText = CreateText(seasonCard.transform, "GamesSimulatedText", "", 16, new Vector2(0f, 22f), new Vector2(270f, 38f));
         tradeStatusText = CreateText(seasonCard.transform, "TradeStatusText", "", 13, new Vector2(-170f, -30f), new Vector2(360f, 32f));
         freeAgencyStatusText = CreateText(seasonCard.transform, "FreeAgencyStatusText", "", 13, new Vector2(220f, -30f), new Vector2(360f, 32f));
 
@@ -805,24 +810,24 @@ public static class InitialSceneCreator
             scratchRowTemplate,
             controller);
 
-        Button assignButton = CreateButton(parent, "AssignPlayerButton", "Назначить игрока", new Vector2(-330f, -700f), new Vector2(250f, 50f));
+        Button assignButton = CreateButton(parent, "AssignPlayerButton", "Назначить игрока", new Vector2(-330f, -660f), new Vector2(250f, 50f));
         SetButtonFontSize(assignButton, 15);
         UnityEventTools.AddPersistentListener(assignButton.onClick, controller.AssignSelectedPlayerToSelectedSlot);
 
-        Button swapGoaliesButton = CreateButton(parent, "SwapGoaliesButton", "Поменять вратарей", new Vector2(-110f, -700f), new Vector2(250f, 50f));
+        Button swapGoaliesButton = CreateButton(parent, "SwapGoaliesButton", "Поменять вратарей", new Vector2(-110f, -660f), new Vector2(250f, 50f));
         SetButtonFontSize(swapGoaliesButton, 15);
         UnityEventTools.AddPersistentListener(swapGoaliesButton.onClick, controller.SwapGoalies);
 
-        Button clearButton = CreateButton(parent, "ClearSelectionButton", "Очистить выбор", new Vector2(110f, -700f), new Vector2(250f, 50f));
+        Button clearButton = CreateButton(parent, "ClearSelectionButton", "Очистить выбор", new Vector2(110f, -660f), new Vector2(250f, 50f));
         SetButtonFontSize(clearButton, 15);
         UnityEventTools.AddPersistentListener(clearButton.onClick, controller.ClearLineupSelection);
 
-        Button autoButton = CreateButton(parent, "AutoBuildLineupButton", "Автосостав", new Vector2(330f, -700f), new Vector2(220f, 50f));
+        Button autoButton = CreateButton(parent, "AutoBuildLineupButton", "Автосостав", new Vector2(330f, -660f), new Vector2(220f, 50f));
         SetButtonFontSize(autoButton, 15);
         UnityEventTools.AddPersistentListener(autoButton.onClick, controller.AutoBuildLineup);
 
-        Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -760f), new Vector2(320f, 50f));
-        UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
+        Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -720f), new Vector2(320f, 50f));
+        UnityEventTools.AddPersistentListener(backButton.onClick, controller.BackFromTeamEdit);
     }
 
     private static void CreateRolesPanel(Transform parent, GameScreenController controller, RolesController rolesController)
@@ -1022,7 +1027,7 @@ public static class InitialSceneCreator
         UnityEventTools.AddPersistentListener(autoButton.onClick, controller.AutoBuildSpecialTeams);
 
         Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(180f, -620f), new Vector2(320f, 54f));
-        UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
+        UnityEventTools.AddPersistentListener(backButton.onClick, controller.BackFromTeamEdit);
     }
 
     private static void CreateInjuriesPanel(
@@ -1421,9 +1426,13 @@ public static class InitialSceneCreator
         SetButtonFontSize(reserveToFarmButton, 14);
         UnityEventTools.AddPersistentListener(reserveToFarmButton.onClick, controller.MoveSelectedReservePlayerToFarm);
 
-        Button autoFixButton = CreateButton(parent, "AutoFixRosterAndLineupButton", "Автозамена", new Vector2(0f, -670f), new Vector2(320f, 48f));
+        Button autoFixButton = CreateButton(parent, "AutoFixRosterAndLineupButton", "Автозамена", new Vector2(-170f, -670f), new Vector2(280f, 48f));
         SetButtonFontSize(autoFixButton, 16);
         UnityEventTools.AddPersistentListener(autoFixButton.onClick, controller.AutoFixRosterAndLineup);
+
+        Button lineupButton = CreateButton(parent, "OrganizationLineupButton", "Состав на матч", new Vector2(170f, -670f), new Vector2(280f, 48f));
+        SetButtonFontSize(lineupButton, 16);
+        UnityEventTools.AddPersistentListener(lineupButton.onClick, controller.ShowLineupFromPreGame);
 
         Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -735f), new Vector2(320f, 52f));
         UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
@@ -1742,11 +1751,18 @@ public static class InitialSceneCreator
     private static void CreateCalendarPanel(Transform parent, GameScreenController controller, CalendarController calendarController)
     {
         CreateText(parent, "Title", "Календарь", 40, new Vector2(0f, 720f), new Vector2(760f, 70f));
+        Text statusText = CreateText(parent, "CalendarStatusText", "Текущий день: 1 | Выбран день: 1", 18, new Vector2(0f, 660f), new Vector2(840f, 36f));
+        Button previousDayButton = CreateButton(parent, "CalendarPreviousDayButton", "-", new Vector2(-310f, 605f), new Vector2(90f, 46f));
+        UnityEventTools.AddPersistentListener(previousDayButton.onClick, controller.CalendarPreviousDay);
+        Button simulateToDayButton = CreateButton(parent, "CalendarSimulateToDayButton", "Симулировать до дня", new Vector2(0f, 605f), new Vector2(430f, 46f));
+        UnityEventTools.AddPersistentListener(simulateToDayButton.onClick, controller.SimulateToSelectedCalendarDay);
+        Button nextDayButton = CreateButton(parent, "CalendarNextDayButton", "+", new Vector2(310f, 605f), new Vector2(90f, 46f));
+        UnityEventTools.AddPersistentListener(nextDayButton.onClick, controller.CalendarNextDay);
         CreateCalendarHeader(parent);
 
         Transform gamesContainer = CreateCalendarScrollView(parent);
         ScheduleGameRowView gameRowTemplate = CreateScheduleGameRowTemplate(gamesContainer);
-        calendarController.Configure(gamesContainer, gameRowTemplate);
+        calendarController.Configure(statusText, gamesContainer, gameRowTemplate);
 
         Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -720f), new Vector2(320f, 56f));
         UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
@@ -1755,6 +1771,10 @@ public static class InitialSceneCreator
     private static void CreateStandingsPanel(Transform parent, GameScreenController controller, StandingsController standingsController)
     {
         CreateText(parent, "Title", "Турнирная таблица", 40, new Vector2(0f, 720f), new Vector2(760f, 70f));
+        Button divisionsButton = CreateButton(parent, "StandingsDivisionsButton", "Дивизионы", new Vector2(-220f, 660f), new Vector2(260f, 46f));
+        UnityEventTools.AddPersistentListener(divisionsButton.onClick, controller.ShowStandingsDivisions);
+        Button conferencesButton = CreateButton(parent, "StandingsConferencesButton", "Конференции", new Vector2(220f, 660f), new Vector2(260f, 46f));
+        UnityEventTools.AddPersistentListener(conferencesButton.onClick, controller.ShowStandingsConferences);
         CreateStandingsHeader(parent);
 
         Transform standingsContainer = CreateStandingsScrollView(parent);
@@ -1768,6 +1788,22 @@ public static class InitialSceneCreator
     private static void CreatePlayerStatsPanel(Transform parent, GameScreenController controller, PlayerStatsController playerStatsController)
     {
         CreateText(parent, "Title", "Статистика игроков", 40, new Vector2(0f, 720f), new Vector2(760f, 70f));
+        Button forwardsButton = CreateButton(parent, "StatsForwardsButton", "Нападающие", new Vector2(-315f, 660f), new Vector2(190f, 42f));
+        UnityEventTools.AddPersistentListener(forwardsButton.onClick, controller.ShowStatsForwards);
+        Button defenseButton = CreateButton(parent, "StatsDefenseButton", "Защитники", new Vector2(-105f, 660f), new Vector2(190f, 42f));
+        UnityEventTools.AddPersistentListener(defenseButton.onClick, controller.ShowStatsDefensemen);
+        Button goaliesButton = CreateButton(parent, "StatsGoaliesButton", "Вратари", new Vector2(105f, 660f), new Vector2(190f, 42f));
+        UnityEventTools.AddPersistentListener(goaliesButton.onClick, controller.ShowStatsGoalies);
+        Button under21Button = CreateButton(parent, "StatsUnder21Button", "До 21", new Vector2(315f, 660f), new Vector2(190f, 42f));
+        UnityEventTools.AddPersistentListener(under21Button.onClick, controller.ShowStatsUnder21);
+        Button previousTeamButton = CreateButton(parent, "StatsPreviousTeamButton", "-", new Vector2(-330f, 600f), new Vector2(80f, 42f));
+        UnityEventTools.AddPersistentListener(previousTeamButton.onClick, controller.SelectPreviousPlayerStatsTeam);
+        Dropdown teamDropdown = CreateDropdown(parent, "StatsTeamDropdown", new Vector2(0f, 600f), new Vector2(520f, 42f));
+        controller.PlayerStatsTeamDropdown = teamDropdown;
+        Button nextTeamButton = CreateButton(parent, "StatsNextTeamButton", "+", new Vector2(330f, 600f), new Vector2(80f, 42f));
+        UnityEventTools.AddPersistentListener(nextTeamButton.onClick, controller.SelectNextPlayerStatsTeam);
+        Button teamButton = CreateButton(parent, "StatsTeamButton", "Команда", new Vector2(0f, 548f), new Vector2(240f, 42f));
+        UnityEventTools.AddPersistentListener(teamButton.onClick, controller.ShowStatsSelectedTeam);
 
         Transform statsContainer = CreatePlayerStatsScrollView(parent);
         PlayerStatsRowView statsRowTemplate = CreatePlayerStatsRowTemplate(statsContainer);
@@ -1802,14 +1838,20 @@ public static class InitialSceneCreator
         preGameController.AwayLogoImage = CreateTeamLogoImage(parent, "AwayLogo", new Vector2(245f, 455f), new Vector2(125f, 125f));
         preGameController.HomeJerseyImage = CreateTeamLogoImage(parent, "HomeJersey", new Vector2(-245f, 300f), new Vector2(125f, 125f));
         preGameController.AwayJerseyImage = CreateTeamLogoImage(parent, "AwayJersey", new Vector2(245f, 300f), new Vector2(125f, 125f));
-        preGameController.LineupText = CreateText(parent, "LineupText", "", 20, new Vector2(0f, 105f), new Vector2(820f, 210f));
-        preGameController.TacticsText = CreateText(parent, "TacticsText", "", 20, new Vector2(0f, -45f), new Vector2(820f, 44f));
+        preGameController.LineupText = CreateText(parent, "LineupText", "", 16, new Vector2(0f, 120f), new Vector2(820f, 330f));
+        preGameController.TacticsText = CreateText(parent, "TacticsText", "", 20, new Vector2(0f, -100f), new Vector2(820f, 44f));
 
-        Button startButton = CreateButton(parent, "StartLiveMatchButton", "Начать матч", new Vector2(-190f, -500f), new Vector2(320f, 60f));
+        Button lineupButton = CreateButton(parent, "PreGameLineupButton", "Состав", new Vector2(-280f, -420f), new Vector2(240f, 56f));
+        UnityEventTools.AddPersistentListener(lineupButton.onClick, controller.ShowLineup);
+
+        Button tacticsButton = CreateButton(parent, "PreGameTacticsButton", "Тактика", new Vector2(0f, -420f), new Vector2(240f, 56f));
+        UnityEventTools.AddPersistentListener(tacticsButton.onClick, controller.ShowTacticsFromPreGame);
+
+        Button startButton = CreateButton(parent, "StartLiveMatchButton", "Начать матч", new Vector2(280f, -420f), new Vector2(240f, 56f));
         preGameController.StartButton = startButton;
         UnityEventTools.AddPersistentListener(startButton.onClick, controller.StartLiveMatch);
 
-        Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(190f, -500f), new Vector2(320f, 60f));
+        Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -500f), new Vector2(320f, 60f));
         UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
     }
 
@@ -1897,6 +1939,8 @@ public static class InitialSceneCreator
         postGameSummaryController.ScoreText.resizeTextForBestFit = true;
         postGameSummaryController.ScoreText.resizeTextMinSize = 18;
         postGameSummaryController.ScoreText.resizeTextMaxSize = 28;
+        postGameSummaryController.HomeLogoImage = CreateTeamLogoImage(parent, "HomeLogo", new Vector2(-360f, 600f), new Vector2(92f, 92f));
+        postGameSummaryController.AwayLogoImage = CreateTeamLogoImage(parent, "AwayLogo", new Vector2(360f, 600f), new Vector2(92f, 92f));
         postGameSummaryController.SummaryText = CreateText(parent, "SummaryText", "", 18, new Vector2(0f, 470f), new Vector2(820f, 150f));
         postGameSummaryController.StarsText = CreateText(parent, "StarsText", "", 18, new Vector2(0f, 275f), new Vector2(820f, 135f));
         postGameSummaryController.EventsText = CreateText(parent, "EventsText", "", 13, new Vector2(0f, 45f), new Vector2(820f, 300f));
@@ -2262,6 +2306,127 @@ public static class InitialSceneCreator
         return button;
     }
 
+    private static Dropdown CreateDropdown(Transform parent, string objectName, Vector2 anchoredPosition, Vector2 size)
+    {
+        GameObject dropdownObject = new GameObject(objectName);
+        dropdownObject.transform.SetParent(parent, false);
+
+        RectTransform rectTransform = dropdownObject.AddComponent<RectTransform>();
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        Image image = dropdownObject.AddComponent<Image>();
+        image.color = new Color(0.9f, 0.9f, 0.9f, 1f);
+
+        Dropdown dropdown = dropdownObject.AddComponent<Dropdown>();
+        dropdown.targetGraphic = image;
+
+        Text labelText = CreateText(dropdownObject.transform, "Label", "Команда", 18, new Vector2(-12f, 0f), new Vector2(size.x - 64f, size.y));
+        labelText.alignment = TextAnchor.MiddleLeft;
+        labelText.color = Color.black;
+
+        Text arrowText = CreateText(dropdownObject.transform, "Arrow", "v", 18, new Vector2((size.x * 0.5f) - 24f, 0f), new Vector2(28f, size.y));
+        arrowText.color = Color.black;
+
+        RectTransform template = CreateDropdownTemplate(dropdownObject.transform, size);
+        Text itemText = template.GetComponentInChildren<Toggle>(true).GetComponentInChildren<Text>(true);
+
+        dropdown.template = template;
+        dropdown.captionText = labelText;
+        dropdown.itemText = itemText;
+        dropdown.options.Clear();
+        dropdown.options.Add(new Dropdown.OptionData("Команда"));
+        dropdown.RefreshShownValue();
+
+        return dropdown;
+    }
+
+    private static RectTransform CreateDropdownTemplate(Transform parent, Vector2 dropdownSize)
+    {
+        GameObject templateObject = new GameObject("Template");
+        templateObject.transform.SetParent(parent, false);
+
+        RectTransform templateRect = templateObject.AddComponent<RectTransform>();
+        templateRect.sizeDelta = new Vector2(dropdownSize.x, 260f);
+        templateRect.anchorMin = new Vector2(0f, 0f);
+        templateRect.anchorMax = new Vector2(1f, 0f);
+        templateRect.pivot = new Vector2(0.5f, 1f);
+        templateRect.anchoredPosition = new Vector2(0f, -dropdownSize.y * 0.5f);
+
+        Image templateImage = templateObject.AddComponent<Image>();
+        templateImage.color = new Color(0.95f, 0.95f, 0.95f, 1f);
+
+        ScrollRect scrollRect = templateObject.AddComponent<ScrollRect>();
+        scrollRect.horizontal = false;
+
+        GameObject viewportObject = new GameObject("Viewport");
+        viewportObject.transform.SetParent(templateObject.transform, false);
+        RectTransform viewportRect = viewportObject.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.sizeDelta = Vector2.zero;
+        viewportRect.anchoredPosition = Vector2.zero;
+        Image viewportImage = viewportObject.AddComponent<Image>();
+        viewportImage.color = Color.white;
+        Mask mask = viewportObject.AddComponent<Mask>();
+        mask.showMaskGraphic = false;
+
+        GameObject contentObject = new GameObject("Content");
+        contentObject.transform.SetParent(viewportObject.transform, false);
+        RectTransform contentRect = contentObject.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.sizeDelta = new Vector2(0f, 260f);
+        VerticalLayoutGroup layoutGroup = contentObject.AddComponent<VerticalLayoutGroup>();
+        layoutGroup.childControlHeight = true;
+        layoutGroup.childControlWidth = true;
+        layoutGroup.childForceExpandHeight = false;
+        layoutGroup.childForceExpandWidth = true;
+        ContentSizeFitter contentSizeFitter = contentObject.AddComponent<ContentSizeFitter>();
+        contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        Toggle itemToggle = CreateDropdownItem(contentObject.transform, dropdownSize.x);
+        scrollRect.viewport = viewportRect;
+        scrollRect.content = contentRect;
+
+        templateObject.SetActive(false);
+        return templateRect;
+    }
+
+    private static Toggle CreateDropdownItem(Transform parent, float width)
+    {
+        GameObject itemObject = new GameObject("Item");
+        itemObject.transform.SetParent(parent, false);
+
+        RectTransform itemRect = itemObject.AddComponent<RectTransform>();
+        itemRect.sizeDelta = new Vector2(width, 42f);
+        LayoutElement layoutElement = itemObject.AddComponent<LayoutElement>();
+        layoutElement.preferredHeight = 42f;
+        layoutElement.minHeight = 42f;
+
+        Image itemImage = itemObject.AddComponent<Image>();
+        itemImage.color = new Color(0.92f, 0.94f, 0.98f, 1f);
+
+        Toggle toggle = itemObject.AddComponent<Toggle>();
+        toggle.targetGraphic = itemImage;
+
+        GameObject checkmarkObject = new GameObject("Item Checkmark");
+        checkmarkObject.transform.SetParent(itemObject.transform, false);
+        RectTransform checkmarkRect = checkmarkObject.AddComponent<RectTransform>();
+        checkmarkRect.sizeDelta = new Vector2(18f, 18f);
+        checkmarkRect.anchoredPosition = new Vector2(-width * 0.5f + 18f, 0f);
+        Image checkmarkImage = checkmarkObject.AddComponent<Image>();
+        checkmarkImage.color = new Color(0.08f, 0.35f, 0.95f, 1f);
+        toggle.graphic = checkmarkImage;
+
+        Text itemText = CreateText(itemObject.transform, "Item Label", "Команда", 17, new Vector2(22f, 0f), new Vector2(width - 56f, 40f));
+        itemText.alignment = TextAnchor.MiddleLeft;
+        itemText.color = Color.black;
+
+        return toggle;
+    }
+
     private static Button CreateDashboardButton(Transform parent, string objectName, string label, ref float y)
     {
         Button button = CreateButton(parent, objectName, label, new Vector2(0f, y), new Vector2(560f, MobileUiConfig.ButtonHeight));
@@ -2348,17 +2513,17 @@ public static class InitialSceneCreator
 
     private static Transform CreateCalendarScrollView(Transform parent)
     {
-        return CreateVerticalScrollView(parent, "CalendarScrollView", new Vector2(840f, 1120f), new Vector2(0f, 0f), 6f);
+        return CreateVerticalScrollView(parent, "CalendarScrollView", new Vector2(840f, 980f), new Vector2(0f, -80f), 6f);
     }
 
     private static Transform CreateStandingsScrollView(Transform parent)
     {
-        return CreateVerticalScrollView(parent, "StandingsScrollView", new Vector2(860f, 1120f), new Vector2(0f, 0f), 6f);
+        return CreateVerticalScrollView(parent, "StandingsScrollView", new Vector2(860f, 1000f), new Vector2(0f, -75f), 6f);
     }
 
     private static Transform CreatePlayerStatsScrollView(Transform parent)
     {
-        return CreateVerticalScrollView(parent, "PlayerStatsScrollView", new Vector2(860f, 1240f), new Vector2(0f, -40f), 6f);
+        return CreateVerticalScrollView(parent, "PlayerStatsScrollView", new Vector2(860f, 960f), new Vector2(0f, -120f), 6f);
     }
 
     private static Transform CreatePlayoffsScrollView(Transform parent)
@@ -2502,7 +2667,7 @@ public static class InitialSceneCreator
 
         RectTransform rectTransform = headerObject.AddComponent<RectTransform>();
         rectTransform.sizeDelta = new Vector2(820f, 42f);
-        rectTransform.anchoredPosition = new Vector2(0f, 620f);
+        rectTransform.anchoredPosition = new Vector2(0f, 545f);
 
         CreateRosterHeaderText(headerObject.transform, "MatchupHeader", "Матчи лиги", Vector2.zero, new Vector2(800f, 40f));
     }
@@ -2514,17 +2679,17 @@ public static class InitialSceneCreator
 
         RectTransform rectTransform = headerObject.AddComponent<RectTransform>();
         rectTransform.sizeDelta = new Vector2(840f, 42f);
-        rectTransform.anchoredPosition = new Vector2(0f, 620f);
+        rectTransform.anchoredPosition = new Vector2(0f, 595f);
 
-        CreateRosterHeaderText(headerObject.transform, "PlaceHeader", "#", new Vector2(-390f, 0f), new Vector2(45f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "TeamHeader", "Команда", new Vector2(-205f, 0f), new Vector2(280f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "GamesHeader", "И", new Vector2(-35f, 0f), new Vector2(45f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "WinsHeader", "В", new Vector2(25f, 0f), new Vector2(45f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "LossesHeader", "П", new Vector2(85f, 0f), new Vector2(45f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "OvertimeLossesHeader", "ОТ", new Vector2(145f, 0f), new Vector2(55f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "PointsHeader", "О", new Vector2(210f, 0f), new Vector2(45f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "GoalsForHeader", "ЗШ", new Vector2(275f, 0f), new Vector2(55f, 40f));
-        CreateRosterHeaderText(headerObject.transform, "GoalsAgainstHeader", "ПШ", new Vector2(345f, 0f), new Vector2(55f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "PlaceHeader", "#", new Vector2(-400f, 0f), new Vector2(35f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "TeamHeader", "Команда", new Vector2(-170f, 0f), new Vector2(390f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "GamesHeader", "И", new Vector2(60f, 0f), new Vector2(35f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "WinsHeader", "В", new Vector2(110f, 0f), new Vector2(35f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "LossesHeader", "П", new Vector2(160f, 0f), new Vector2(35f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "OvertimeLossesHeader", "ОТ", new Vector2(220f, 0f), new Vector2(45f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "PointsHeader", "О", new Vector2(280f, 0f), new Vector2(35f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "GoalsForHeader", "ЗШ", new Vector2(335f, 0f), new Vector2(45f, 40f));
+        CreateRosterHeaderText(headerObject.transform, "GoalsAgainstHeader", "ПШ", new Vector2(390f, 0f), new Vector2(45f, 40f));
     }
 
     private static void CreateRosterHeaderText(Transform parent, string objectName, string value, Vector2 anchoredPosition, Vector2 size)
@@ -3948,15 +4113,16 @@ public static class InitialSceneCreator
         Image image = rowObject.AddComponent<Image>();
         image.color = new Color(0.9f, 0.9f, 0.9f, 1f);
 
-        Text placeText = CreatePlayerRowText(rowObject.transform, "PlaceText", "1", new Vector2(-390f, 0f), new Vector2(45f, 44f));
-        Text teamNameText = CreatePlayerRowText(rowObject.transform, "TeamNameText", "Toronto Maple Leafs", new Vector2(-205f, 0f), new Vector2(280f, 44f));
-        Text gamesPlayedText = CreatePlayerRowText(rowObject.transform, "GamesPlayedText", "0", new Vector2(-35f, 0f), new Vector2(45f, 44f));
-        Text winsText = CreatePlayerRowText(rowObject.transform, "WinsText", "0", new Vector2(25f, 0f), new Vector2(45f, 44f));
-        Text lossesText = CreatePlayerRowText(rowObject.transform, "LossesText", "0", new Vector2(85f, 0f), new Vector2(45f, 44f));
-        Text overtimeLossesText = CreatePlayerRowText(rowObject.transform, "OvertimeLossesText", "0", new Vector2(145f, 0f), new Vector2(55f, 44f));
-        Text pointsText = CreatePlayerRowText(rowObject.transform, "PointsText", "0", new Vector2(210f, 0f), new Vector2(45f, 44f));
-        Text goalsForText = CreatePlayerRowText(rowObject.transform, "GoalsForText", "0", new Vector2(275f, 0f), new Vector2(55f, 44f));
-        Text goalsAgainstText = CreatePlayerRowText(rowObject.transform, "GoalsAgainstText", "0", new Vector2(345f, 0f), new Vector2(55f, 44f));
+        Text placeText = CreatePlayerRowText(rowObject.transform, "PlaceText", "1", new Vector2(-400f, 0f), new Vector2(35f, 44f));
+        Text teamNameText = CreatePlayerRowText(rowObject.transform, "TeamNameText", "Toronto Maple Leafs", new Vector2(-170f, 0f), new Vector2(390f, 44f));
+        teamNameText.fontSize = 13;
+        Text gamesPlayedText = CreatePlayerRowText(rowObject.transform, "GamesPlayedText", "0", new Vector2(60f, 0f), new Vector2(35f, 44f));
+        Text winsText = CreatePlayerRowText(rowObject.transform, "WinsText", "0", new Vector2(110f, 0f), new Vector2(35f, 44f));
+        Text lossesText = CreatePlayerRowText(rowObject.transform, "LossesText", "0", new Vector2(160f, 0f), new Vector2(35f, 44f));
+        Text overtimeLossesText = CreatePlayerRowText(rowObject.transform, "OvertimeLossesText", "0", new Vector2(220f, 0f), new Vector2(45f, 44f));
+        Text pointsText = CreatePlayerRowText(rowObject.transform, "PointsText", "0", new Vector2(280f, 0f), new Vector2(35f, 44f));
+        Text goalsForText = CreatePlayerRowText(rowObject.transform, "GoalsForText", "0", new Vector2(335f, 0f), new Vector2(45f, 44f));
+        Text goalsAgainstText = CreatePlayerRowText(rowObject.transform, "GoalsAgainstText", "0", new Vector2(390f, 0f), new Vector2(45f, 44f));
 
         StandingRowView rowView = rowObject.AddComponent<StandingRowView>();
         rowView.Configure(

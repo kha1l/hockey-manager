@@ -3289,6 +3289,69 @@ public static class GameSession
         return SimulateNextScheduledGame();
     }
 
+    public static int SimulateRegularSeasonToDay(int targetDay)
+    {
+        if (CurrentState == null)
+        {
+            Debug.LogWarning("Cannot simulate to day: active game was not found.");
+            return 0;
+        }
+
+        EnsureSeasonScheduleAndStandingsOnly();
+        if (CurrentState.Season == null)
+        {
+            return 0;
+        }
+
+        int simulatedDays = 0;
+        int safetyCounter = 0;
+        targetDay = Mathf.Max(1, targetDay);
+        while (safetyCounter < 500 && !CurrentState.Season.IsSeasonFinished)
+        {
+            safetyCounter++;
+            int nextDay = GetNextUnplayedDay(CurrentState.Season);
+            if (nextDay <= 0 || nextDay > targetDay)
+            {
+                break;
+            }
+
+            int gamesBefore = CurrentState.TotalGamesSimulated;
+            SimulateNextLeagueDay();
+            if (CurrentState == null || CurrentState.Season == null)
+            {
+                break;
+            }
+
+            if (CurrentState.TotalGamesSimulated == gamesBefore)
+            {
+                Debug.LogWarning("Simulation to selected day stopped: no games were simulated on day " + nextDay);
+                break;
+            }
+
+            simulatedDays++;
+        }
+
+        if (CurrentState != null
+            && CurrentState.Season != null
+            && GetNextUnplayedGame(CurrentState.Season) == null)
+        {
+            CurrentState.Season.IsSeasonFinished = true;
+            EnsurePlayoffs();
+        }
+
+        if (CurrentState != null)
+        {
+            SaveLoadService.Save(CurrentState);
+        }
+
+        return simulatedDays;
+    }
+
+    public static void PreparePostGameSummary(MatchResultData result)
+    {
+        LastPostGameSummary = LiveMatchResultAdapter.ToPostGameSummary(result);
+    }
+
     public static MatchResultData SimulateNextScheduledGame()
     {
         List<MatchResultData> results = SimulateNextLeagueDay();
@@ -3436,7 +3499,6 @@ public static class GameSession
 
         bool homeIsUserTeam = CurrentTeam != null && homeTeam.Id == CurrentTeam.Id;
         bool awayIsUserTeam = CurrentTeam != null && awayTeam.Id == CurrentTeam.Id;
-        bool isUserGame = homeIsUserTeam || awayIsUserTeam;
         if (!PrepareTeamForFastSimulation(homeTeam, homeIsUserTeam, out string homeMessage))
         {
             Debug.LogWarning(homeMessage);
@@ -3451,16 +3513,9 @@ public static class GameSession
 
         CurrentState.EnsureMatchHistory();
         MatchResultData result = MatchSimulator.SimulateFast(homeTeam, awayTeam);
-        if (isUserGame)
-        {
-            result.PlayerStats = PlayerGameStatsGenerator.Generate(result, homeTeam, awayTeam);
-            IceTimeService.ApplyLastGameIceTime(homeTeam);
-            IceTimeService.ApplyLastGameIceTime(awayTeam);
-        }
-        else
-        {
-            result.PlayerStats = new List<PlayerGameStatData>();
-        }
+        result.PlayerStats = PlayerGameStatsGenerator.Generate(result, homeTeam, awayTeam);
+        IceTimeService.ApplyLastGameIceTime(homeTeam);
+        IceTimeService.ApplyLastGameIceTime(awayTeam);
 
         game.Result = result;
         game.IsPlayed = true;
@@ -3469,12 +3524,9 @@ public static class GameSession
         CurrentState.Season.CurrentGameIndex = game.GameNumber;
 
         StandingsService.ApplyMatchResult(CurrentState.Season, result);
-        if (isUserGame)
-        {
-            PlayerStatsService.ApplyGameStats(CurrentState.Season, result.PlayerStats);
-            PlayerFatigueService.ApplyFatigueAfterMatch(homeTeam, awayTeam);
-            InjuryService.ApplyInjuryChecksAfterMatch(CurrentState, homeTeam, awayTeam, "RegularSeasonFast");
-        }
+        PlayerStatsService.ApplyGameStats(CurrentState.Season, result.PlayerStats);
+        PlayerFatigueService.ApplyFatigueAfterMatch(homeTeam, awayTeam);
+        InjuryService.ApplyInjuryChecksAfterMatch(CurrentState, homeTeam, awayTeam, "RegularSeasonFast");
 
         if (playedTeamIds != null)
         {
@@ -3998,12 +4050,12 @@ public static class GameSession
             HomeTeamId = homeTeam == null ? "" : homeTeam.Id,
             HomeTeamName = TeamIdentityService.GetDisplayName(homeTeam),
             HomeLogoResourcePath = homeIdentity == null ? "" : homeIdentity.LogoResourcePath,
-            HomeJerseyResourcePath = homeIdentity == null ? "" : homeIdentity.HomeJerseyResourcePath,
+            HomeJerseyResourcePath = TeamJerseySelectionService.GetHomeJerseyPath(homeTeam),
             HomeFullBodyResourcePath = homeIdentity == null ? "" : homeIdentity.FullBodyResourcePath,
             AwayTeamId = awayTeam == null ? "" : awayTeam.Id,
             AwayTeamName = TeamIdentityService.GetDisplayName(awayTeam),
             AwayLogoResourcePath = awayIdentity == null ? "" : awayIdentity.LogoResourcePath,
-            AwayJerseyResourcePath = awayIdentity == null ? "" : awayIdentity.AwayJerseyResourcePath,
+            AwayJerseyResourcePath = TeamJerseySelectionService.GetAwayJerseyPath(homeTeam, awayTeam),
             AwayFullBodyResourcePath = awayIdentity == null ? "" : awayIdentity.FullBodyResourcePath,
             UserTeamId = CurrentTeam == null ? "" : CurrentTeam.Id,
             UserTeamName = TeamIdentityService.GetDisplayName(CurrentTeam),
@@ -4112,7 +4164,13 @@ public static class GameSession
 
     private static string GetPlayerName(PlayerData player)
     {
-        return player == null ? "" : player.FirstName + " " + player.LastName;
+        if (player == null)
+        {
+            return "";
+        }
+
+        string number = player.JerseyNumber > 0 ? "#" + player.JerseyNumber + " " : "";
+        return number + player.FirstName + " " + player.LastName;
     }
 
     public static void EnsurePlayoffs()

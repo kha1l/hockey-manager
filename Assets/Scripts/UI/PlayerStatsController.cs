@@ -3,6 +3,12 @@ using UnityEngine;
 
 public class PlayerStatsController : MonoBehaviour
 {
+    public const string ModeForwards = "Forwards";
+    public const string ModeDefensemen = "Defensemen";
+    public const string ModeGoalies = "Goalies";
+    public const string ModeUnder21 = "Under21";
+    public const string ModeTeam = "Team";
+
     [SerializeField] private Transform _statsContainer;
     [SerializeField] private PlayerStatsRowView _statsRowPrefab;
 
@@ -14,6 +20,11 @@ public class PlayerStatsController : MonoBehaviour
 
     public void ShowStats(SeasonData season, string teamId)
     {
+        ShowStats(season, teamId, ModeForwards);
+    }
+
+    public void ShowStats(SeasonData season, string teamId, string mode)
+    {
         if (_statsContainer == null || _statsRowPrefab == null)
         {
             Debug.LogError("PlayerStatsController: UI references are not configured.");
@@ -23,6 +34,31 @@ public class PlayerStatsController : MonoBehaviour
         ClearRows();
         _statsRowPrefab.gameObject.SetActive(false);
 
+        if (season == null)
+        {
+            PlayerStatsRowView emptyRow = CreateRow("empty-stats-row");
+            emptyRow.InitializeMessage("Stats are not available yet.");
+            return;
+        }
+
+        if (mode == ModeTeam)
+        {
+            ShowTeamStats(season, teamId);
+            return;
+        }
+
+        Dictionary<string, PlayerData> playersById = BuildPlayerLookup();
+        if (mode == ModeGoalies)
+        {
+            ShowLeagueGoalies(season, playersById);
+            return;
+        }
+
+        ShowLeagueSkaters(season, playersById, mode);
+    }
+
+    private void ShowTeamStats(SeasonData season, string teamId)
+    {
         List<PlayerSeasonStatsData> skaters = PlayerStatsService.GetTeamSkaterStats(season, teamId);
         List<PlayerSeasonStatsData> goalies = PlayerStatsService.GetTeamGoalieStats(season, teamId);
         Dictionary<string, PlayerData> playersById = BuildPlayerLookup();
@@ -35,7 +71,7 @@ public class PlayerStatsController : MonoBehaviour
         }
 
         PlayerStatsRowView skaterHeader = CreateRow("skater-header-row");
-        skaterHeader.InitializeMessage("Полевые: Игрок | Поз | И | Г | П | О | ATOI | PPP | PIM | Бр | +/-");
+        skaterHeader.InitializeMessage("Полевые: # Игрок | Поз | И | Г | П | О | ATOI | PPP | PIM | Бр | +/-");
 
         foreach (PlayerSeasonStatsData stats in skaters)
         {
@@ -44,12 +80,95 @@ public class PlayerStatsController : MonoBehaviour
         }
 
         PlayerStatsRowView goalieHeader = CreateRow("goalie-header-row");
-        goalieHeader.InitializeMessage("Вратари: Игрок | И | В | П | ОТП | ATOI | Сэйвы | ПШ | SO");
+        goalieHeader.InitializeMessage("Вратари: # Игрок | И | В | П | ОТП | ATOI | Сэйвы | ПШ | SO");
 
         foreach (PlayerSeasonStatsData stats in goalies)
         {
             PlayerStatsRowView row = CreateRow(stats.PlayerId + "-goalie-row");
             row.InitializeGoalie(stats, FindPlayer(playersById, stats.PlayerId));
+        }
+    }
+
+    private void ShowLeagueSkaters(
+        SeasonData season,
+        Dictionary<string, PlayerData> playersById,
+        string mode)
+    {
+        List<PlayerSeasonStatsData> skaters = new List<PlayerSeasonStatsData>();
+        if (season.PlayerStats != null)
+        {
+            foreach (PlayerSeasonStatsData stats in season.PlayerStats)
+            {
+                if (stats == null || stats.IsGoalie)
+                {
+                    continue;
+                }
+
+                PlayerData player = FindPlayer(playersById, stats.PlayerId);
+                if (!MatchesSkaterMode(stats, player, mode))
+                {
+                    continue;
+                }
+
+                skaters.Add(stats);
+            }
+        }
+
+        skaters.Sort(CompareSkaters);
+        string title = mode == ModeDefensemen
+            ? "Top 10 defensemen: # Player | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-"
+            : mode == ModeUnder21
+                ? "Top 10 U21 players: # Player | Age | Pos | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-"
+                : "Top 10 forwards: # Player | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-";
+        PlayerStatsRowView header = CreateRow("league-skater-header-row");
+        header.InitializeMessage(title);
+
+        int count = Mathf.Min(10, skaters.Count);
+        for (int i = 0; i < count; i++)
+        {
+            PlayerSeasonStatsData stats = skaters[i];
+            PlayerData player = FindPlayer(playersById, stats.PlayerId);
+            PlayerStatsRowView row = CreateRow(stats.PlayerId + "-league-skater-row");
+            row.InitializeSkater(stats, player);
+        }
+
+        if (count == 0)
+        {
+            PlayerStatsRowView emptyRow = CreateRow("league-skater-empty-row");
+            emptyRow.InitializeMessage("No players match this filter yet.");
+        }
+    }
+
+    private void ShowLeagueGoalies(SeasonData season, Dictionary<string, PlayerData> playersById)
+    {
+        List<PlayerSeasonStatsData> goalies = new List<PlayerSeasonStatsData>();
+        if (season.PlayerStats != null)
+        {
+            foreach (PlayerSeasonStatsData stats in season.PlayerStats)
+            {
+                if (stats != null && stats.IsGoalie)
+                {
+                    goalies.Add(stats);
+                }
+            }
+        }
+
+        goalies.Sort(CompareGoalies);
+        PlayerStatsRowView header = CreateRow("league-goalie-header-row");
+        header.InitializeMessage("Top 10 goalies: # Player | Age | GP | W | L | OTL | ATOI | Saves | GA | SO");
+
+        int count = Mathf.Min(10, goalies.Count);
+        for (int i = 0; i < count; i++)
+        {
+            PlayerSeasonStatsData stats = goalies[i];
+            PlayerStatsRowView row = CreateRow(stats.PlayerId + "-league-goalie-row");
+            row.InitializeGoalie(stats, FindPlayer(playersById, stats.PlayerId));
+        }
+
+        if (count == 0)
+        {
+            PlayerStatsRowView emptyRow = CreateRow("league-goalie-empty-row");
+            emptyRow.InitializeMessage("No goalie stats yet.");
         }
     }
 
@@ -103,5 +222,69 @@ public class PlayerStatsController : MonoBehaviour
         }
 
         return playersById.TryGetValue(playerId, out PlayerData player) ? player : null;
+    }
+
+    private static bool MatchesSkaterMode(PlayerSeasonStatsData stats, PlayerData player, string mode)
+    {
+        string position = string.IsNullOrEmpty(stats.Position)
+            ? (player == null ? "" : player.Position)
+            : stats.Position;
+        if (mode == ModeDefensemen)
+        {
+            return position == "D";
+        }
+
+        if (mode == ModeUnder21)
+        {
+            return player != null && player.Age <= 21;
+        }
+
+        return position != "D";
+    }
+
+    private static int CompareSkaters(PlayerSeasonStatsData left, PlayerSeasonStatsData right)
+    {
+        int pointsComparison = right.Points.CompareTo(left.Points);
+        if (pointsComparison != 0)
+        {
+            return pointsComparison;
+        }
+
+        int goalsComparison = right.Goals.CompareTo(left.Goals);
+        if (goalsComparison != 0)
+        {
+            return goalsComparison;
+        }
+
+        int shotsComparison = right.Shots.CompareTo(left.Shots);
+        if (shotsComparison != 0)
+        {
+            return shotsComparison;
+        }
+
+        return string.Compare(left.PlayerName, right.PlayerName, System.StringComparison.Ordinal);
+    }
+
+    private static int CompareGoalies(PlayerSeasonStatsData left, PlayerSeasonStatsData right)
+    {
+        int winsComparison = right.GoalieWins.CompareTo(left.GoalieWins);
+        if (winsComparison != 0)
+        {
+            return winsComparison;
+        }
+
+        int savesComparison = right.Saves.CompareTo(left.Saves);
+        if (savesComparison != 0)
+        {
+            return savesComparison;
+        }
+
+        int goalsAgainstComparison = left.GoalsAgainst.CompareTo(right.GoalsAgainst);
+        if (goalsAgainstComparison != 0)
+        {
+            return goalsAgainstComparison;
+        }
+
+        return string.Compare(left.PlayerName, right.PlayerName, System.StringComparison.Ordinal);
     }
 }

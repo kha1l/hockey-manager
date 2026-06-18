@@ -24,6 +24,7 @@ public class MatchResultData
     public string PlayedAtUtc;
     public string Summary;
     public List<PlayerGameStatData> PlayerStats = new List<PlayerGameStatData>();
+    public List<LiveMatchEventData> Events = new List<LiveMatchEventData>();
 
     public MatchResultData()
     {
@@ -35,6 +36,11 @@ public class MatchResultData
         if (PlayerStats == null)
         {
             PlayerStats = new List<PlayerGameStatData>();
+        }
+
+        if (Events == null)
+        {
+            Events = new List<LiveMatchEventData>();
         }
     }
 }

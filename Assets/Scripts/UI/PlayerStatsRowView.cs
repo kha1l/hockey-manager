@@ -17,8 +17,9 @@ public class PlayerStatsRowView : MonoBehaviour
 
     public void InitializeSkater(PlayerSeasonStatsData stats, PlayerData player)
     {
-        _text.text = stats.PlayerName
+        _text.text = FormatPlayerName(stats, player)
             + " | " + stats.Position
+            + FormatAge(player)
             + " | " + stats.GamesPlayed
             + " | " + stats.Goals
             + " | " + stats.Assists
@@ -38,7 +39,8 @@ public class PlayerStatsRowView : MonoBehaviour
 
     public void InitializeGoalie(PlayerSeasonStatsData stats, PlayerData player)
     {
-        _text.text = stats.PlayerName
+        _text.text = FormatPlayerName(stats, player)
+            + FormatAge(player)
             + " | " + stats.GoalieGamesPlayed
             + " | " + stats.GoalieWins
             + " | " + stats.GoalieLosses
@@ -66,6 +68,22 @@ public class PlayerStatsRowView : MonoBehaviour
             + player.CareerAssists + "A "
             + player.CareerPoints + "P"
             + " | AW " + player.CareerAwardsCount;
+    }
+
+    private static string FormatAge(PlayerData player)
+    {
+        return player == null || player.Age <= 0 ? "" : " | Age " + player.Age;
+    }
+
+    private static string FormatPlayerName(PlayerSeasonStatsData stats, PlayerData player)
+    {
+        if (player == null)
+        {
+            return stats == null ? "" : stats.PlayerName;
+        }
+
+        string number = player.JerseyNumber > 0 ? "#" + player.JerseyNumber + " " : "";
+        return number + player.FirstName + " " + player.LastName;
     }
 
     private static string FormatGoalieCareer(PlayerData player)

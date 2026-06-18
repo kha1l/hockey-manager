@@ -13,11 +13,11 @@ public static class LiveMatchTokenService
         match.EnsureCollections();
         match.Tokens.Clear();
 
-        AddTeamTokens(match, homeTeam, true, GetStats(match, homeTeam));
-        AddTeamTokens(match, awayTeam, false, GetStats(match, awayTeam));
+        AddTeamTokens(match, homeTeam, homeTeam, awayTeam, true, GetStats(match, homeTeam));
+        AddTeamTokens(match, awayTeam, homeTeam, awayTeam, false, GetStats(match, awayTeam));
     }
 
-    private static void AddTeamTokens(LiveMatchStateData match, TeamData team, bool isHome, LiveMatchTeamStatsData stats)
+    private static void AddTeamTokens(LiveMatchStateData match, TeamData team, TeamData homeTeam, TeamData awayTeam, bool isHome, LiveMatchTeamStatsData stats)
     {
         if (team == null || stats == null)
         {
@@ -33,18 +33,20 @@ public static class LiveMatchTokenService
 
         for (int i = 0; i < skaters.Count && i < positions.GetLength(0); i++)
         {
-            AddToken(match, team, skaters[i], isHome, false, goaliePulled && i == skaters.Count - 1, positions[i, 0], positions[i, 1]);
+            AddToken(match, team, homeTeam, awayTeam, skaters[i], isHome, false, goaliePulled && i == skaters.Count - 1, positions[i, 0], positions[i, 1]);
         }
 
         if (goalie != null)
         {
-            AddToken(match, team, goalie, isHome, true, false, isHome ? 0.07f : 0.93f, 0.50f);
+            AddToken(match, team, homeTeam, awayTeam, goalie, isHome, true, false, isHome ? 0.07f : 0.93f, 0.50f);
         }
     }
 
     private static void AddToken(
         LiveMatchStateData match,
         TeamData team,
+        TeamData homeTeam,
+        TeamData awayTeam,
         PlayerData player,
         bool isHome,
         bool isGoalie,
@@ -60,6 +62,9 @@ public static class LiveMatchTokenService
         JerseyNumberService.EnsureJerseyNumber(player, team);
         float jitter = Mathf.Sin((match.TotalGameSecondsElapsed + player.JerseyNumber * 19) * 0.08f) * 0.018f;
         TeamIdentityData identity = team == null ? null : team.Identity;
+        string jerseyPath = isHome
+            ? TeamJerseySelectionService.GetHomeJerseyPath(team)
+            : TeamJerseySelectionService.GetAwayJerseyPath(homeTeam, awayTeam);
         match.Tokens.Add(new LiveMatchPlayerTokenData
         {
             PlayerId = player.Id,
@@ -73,7 +78,7 @@ public static class LiveMatchTokenService
             IsHomeTeam = isHome,
             NormalizedX = Mathf.Clamp01(x + jitter),
             NormalizedY = Mathf.Clamp01(y - jitter),
-            JerseyResourcePath = identity == null ? "" : isHome ? identity.HomeJerseyResourcePath : identity.AwayJerseyResourcePath,
+            JerseyResourcePath = jerseyPath,
             FullBodyResourcePath = identity == null ? "" : identity.FullBodyResourcePath,
             IsOnIce = true,
             IsInjured = player.IsInjured,

@@ -184,6 +184,10 @@ public class LiveMatchController : MonoBehaviour
         ConfigureText(StatsText, new Vector2(-220f, 530f), new Vector2(360f, 70f), 14, 17, TextAnchor.MiddleCenter);
         ConfigureText(PowerPlayText, new Vector2(220f, 530f), new Vector2(360f, 70f), 14, 17, TextAnchor.MiddleCenter);
         ConfigureText(EventFeedText, new Vector2(-220f, -210f), new Vector2(400f, 290f), 11, 13, TextAnchor.UpperLeft);
+        if (EventFeedText != null)
+        {
+            EventFeedText.supportRichText = true;
+        }
         ConfigureText(TokenDetailsText, new Vector2(245f, -170f), new Vector2(360f, 120f), 12, 14, TextAnchor.UpperLeft);
         SetRect(RinkArea, new Vector2(0f, 150f), new Vector2(820f, 520f));
         SetButtonVisible("Speed1Button", false);
@@ -308,12 +312,12 @@ public class LiveMatchController : MonoBehaviour
     {
         if (match.HomeStats.PowerPlaySecondsRemaining > 0)
         {
-            return match.HomeTeamName + " большинство: " + LiveMatchConfig.FormatClock(match.HomeStats.PowerPlaySecondsRemaining);
+            return "";
         }
 
         if (match.AwayStats.PowerPlaySecondsRemaining > 0)
         {
-            return match.AwayTeamName + " большинство: " + LiveMatchConfig.FormatClock(match.AwayStats.PowerPlaySecondsRemaining);
+            return "";
         }
 
         return "Равные составы";
@@ -370,7 +374,14 @@ public class LiveMatchController : MonoBehaviour
                 continue;
             }
 
-            builder.AppendLine(matchEvent.PeriodLabel + " " + matchEvent.ClockLabel + "  " + matchEvent.Description);
+            if (matchEvent.EventType == "Goal")
+            {
+                builder.AppendLine("<color=#FFD84A>" + matchEvent.Description + "</color>");
+            }
+            else
+            {
+                builder.AppendLine(matchEvent.PeriodLabel + " " + matchEvent.ClockLabel + "  " + matchEvent.Description);
+            }
             count++;
             if (count >= 10)
             {

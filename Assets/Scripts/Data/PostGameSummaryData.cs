@@ -25,12 +25,14 @@ public class PostGameSummaryData
     public string SecondStarPlayerName;
     public string ThirdStarPlayerName;
     public List<LiveMatchEventData> ScoringEvents = new List<LiveMatchEventData>();
+    public List<LiveMatchEventData> PenaltyEvents = new List<LiveMatchEventData>();
     public List<LiveMatchEventData> InjuryEvents = new List<LiveMatchEventData>();
     public string Summary;
 
     public void EnsureCollections()
     {
         if (ScoringEvents == null) ScoringEvents = new List<LiveMatchEventData>();
+        if (PenaltyEvents == null) PenaltyEvents = new List<LiveMatchEventData>();
         if (InjuryEvents == null) InjuryEvents = new List<LiveMatchEventData>();
     }
 }

@@ -47,4 +47,63 @@ public class StandingRowView : MonoBehaviour
         _goalsForText.text = standing.GoalsFor.ToString();
         _goalsAgainstText.text = standing.GoalsAgainst.ToString();
     }
+
+    public void InitializeDetailed(int place, TeamStandingData standing, TeamData team)
+    {
+        Initialize(place, standing);
+
+        int goalDifference = standing.GoalsFor - standing.GoalsAgainst;
+        string fullTeamName = GetFullTeamName(standing, team);
+        string groupText = team == null ? "" : " | " + SafeText(team.ConferenceName) + " / " + SafeText(team.DivisionName);
+        string percentText = standing.GamesPlayed <= 0
+            ? ".000"
+            : (standing.Points / (double)(standing.GamesPlayed * 2)).ToString(".000");
+        _teamNameText.text = fullTeamName
+            + groupText
+            + " | P% " + percentText
+            + " | +/- " + FormatSigned(goalDifference);
+    }
+
+    public void InitializeMessage(string message)
+    {
+        _placeText.text = "";
+        _teamNameText.text = message;
+        _gamesPlayedText.text = "";
+        _winsText.text = "";
+        _lossesText.text = "";
+        _overtimeLossesText.text = "";
+        _pointsText.text = "";
+        _goalsForText.text = "";
+        _goalsAgainstText.text = "";
+    }
+
+    private static string GetFullTeamName(TeamStandingData standing, TeamData team)
+    {
+        if (team != null)
+        {
+            string city = SafeText(team.City);
+            string name = SafeText(team.Name);
+            if (!string.IsNullOrEmpty(city) && !string.IsNullOrEmpty(name))
+            {
+                return city + " " + name;
+            }
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                return name;
+            }
+        }
+
+        return standing == null ? "" : SafeText(standing.TeamName);
+    }
+
+    private static string SafeText(string value)
+    {
+        return string.IsNullOrEmpty(value) ? "" : value;
+    }
+
+    private static string FormatSigned(int value)
+    {
+        return value > 0 ? "+" + value : value.ToString();
+    }
 }

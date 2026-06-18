@@ -38,8 +38,49 @@ public static class LiveMatchResultAdapter
             result.Summary += " OT";
         }
 
+        result.Events = match.Events == null ? new List<LiveMatchEventData>() : new List<LiveMatchEventData>(match.Events);
         result.PlayerStats = ToPlayerGameStats(match, result);
         return result;
+    }
+
+    public static PostGameSummaryData ToPostGameSummary(MatchResultData result)
+    {
+        if (result == null)
+        {
+            return null;
+        }
+
+        result.EnsurePlayerStats();
+        string winnerName = result.WinnerTeamId == result.HomeTeamId ? result.HomeTeamName : result.AwayTeamName;
+        PostGameSummaryData summary = new PostGameSummaryData
+        {
+            LiveMatchId = result.MatchId,
+            HomeTeamId = result.HomeTeamId,
+            HomeTeamName = result.HomeTeamName,
+            AwayTeamId = result.AwayTeamId,
+            AwayTeamName = result.AwayTeamName,
+            HomeScore = result.HomeScore,
+            AwayScore = result.AwayScore,
+            WinnerTeamId = result.WinnerTeamId,
+            WinnerTeamName = winnerName,
+            WentToOvertime = result.IsOvertime,
+            HomeShots = result.HomeShots,
+            AwayShots = result.AwayShots,
+            HomePowerPlayGoals = result.HomePowerPlayGoals,
+            HomePowerPlayOpportunities = result.HomePowerPlayOpportunities,
+            AwayPowerPlayGoals = result.AwayPowerPlayGoals,
+            AwayPowerPlayOpportunities = result.AwayPowerPlayOpportunities,
+            Summary = "Победитель: " + winnerName
+        };
+
+        summary.EnsureCollections();
+        foreach (LiveMatchEventData matchEvent in result.Events)
+        {
+            AddSummaryEvent(summary, matchEvent);
+        }
+
+        FillStars(result, summary);
+        return summary;
     }
 
     public static PostGameSummaryData ToPostGameSummary(LiveMatchStateData match)
@@ -74,14 +115,7 @@ public static class LiveMatchResultAdapter
                 continue;
             }
 
-            if (matchEvent.EventType == "Goal" || matchEvent.EventType == "ShootoutGoal")
-            {
-                summary.ScoringEvents.Add(matchEvent);
-            }
-            else if (matchEvent.EventType == "Injury")
-            {
-                summary.InjuryEvents.Add(matchEvent);
-            }
+            AddSummaryEvent(summary, matchEvent);
         }
 
         FillStars(match, summary);
@@ -147,6 +181,7 @@ public static class LiveMatchResultAdapter
                 Points = liveStat.Goals + liveStat.Assists,
                 Shots = liveStat.Shots,
                 PenaltyMinutes = liveStat.PenaltyMinutes,
+                PlusMinus = liveStat.PlusMinus,
                 Saves = liveStat.Saves,
                 GoalsAgainst = liveStat.GoalsAgainst,
                 ShotsAgainst = liveStat.Saves + liveStat.GoalsAgainst,
@@ -177,7 +212,47 @@ public static class LiveMatchResultAdapter
         summary.ThirdStarPlayerName = players.Count > 2 ? players[2].PlayerName : "";
     }
 
+    private static void FillStars(MatchResultData result, PostGameSummaryData summary)
+    {
+        List<PlayerGameStatData> players = new List<PlayerGameStatData>(result.PlayerStats);
+        players.Sort((left, right) => GetStarScore(right).CompareTo(GetStarScore(left)));
+        summary.FirstStarPlayerName = players.Count > 0 ? players[0].PlayerName : "";
+        summary.SecondStarPlayerName = players.Count > 1 ? players[1].PlayerName : "";
+        summary.ThirdStarPlayerName = players.Count > 2 ? players[2].PlayerName : "";
+    }
+
+    private static void AddSummaryEvent(PostGameSummaryData summary, LiveMatchEventData matchEvent)
+    {
+        if (summary == null || matchEvent == null)
+        {
+            return;
+        }
+
+        if (matchEvent.EventType == "Goal" || matchEvent.EventType == "ShootoutGoal")
+        {
+            summary.ScoringEvents.Add(matchEvent);
+        }
+        else if (matchEvent.EventType == "Penalty")
+        {
+            summary.PenaltyEvents.Add(matchEvent);
+        }
+        else if (matchEvent.EventType == "Injury")
+        {
+            summary.InjuryEvents.Add(matchEvent);
+        }
+    }
+
     private static int GetStarScore(LiveMatchPlayerStatData stat)
+    {
+        if (stat == null)
+        {
+            return 0;
+        }
+
+        return stat.Goals * 5 + stat.Assists * 3 + stat.Shots + stat.Saves / 4 - stat.GoalsAgainst * 2;
+    }
+
+    private static int GetStarScore(PlayerGameStatData stat)
     {
         if (stat == null)
         {

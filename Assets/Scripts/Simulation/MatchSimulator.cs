@@ -119,6 +119,7 @@ public static class MatchSimulator
         // Alpha tuning note: keep these scoring constants report-driven. Use AlphaBalanceReport before changing conversion.
         float expectedGoals = 2.75f + ((teamRating - opponentRating) * 0.070f);
         expectedGoals *= goalModifier;
+        expectedGoals *= 1.10f;
         expectedGoals += UnityEngine.Random.Range(-1.15f, 1.25f) * riskModifier;
         expectedGoals = Mathf.Clamp(expectedGoals, 0.7f, 5.5f);
 

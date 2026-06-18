@@ -13,6 +13,7 @@ public class LiveMatchPlayerStatData
     public int Points;
     public int Shots;
     public int PenaltyMinutes;
+    public int PlusMinus;
     public int Saves;
     public int GoalsAgainst;
     public int TimeOnIceSeconds;

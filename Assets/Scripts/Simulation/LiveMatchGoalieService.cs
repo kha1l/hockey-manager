@@ -126,7 +126,12 @@ public static class LiveMatchGoalieService
             return false;
         }
 
-        if (diff <= -3)
+        if (diff <= -4)
+        {
+            return false;
+        }
+
+        if (diff == -3)
         {
             return match.PeriodSecondsRemaining <= LiveMatchConfig.ThreeGoalPullGoalieSeconds;
         }

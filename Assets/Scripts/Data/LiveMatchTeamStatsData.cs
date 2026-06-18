@@ -19,4 +19,6 @@ public class LiveMatchTeamStatsData
     public string TacticName;
     public int PowerPlaySecondsRemaining;
     public int PenaltyKillSecondsRemaining;
+    public int ActivePowerPlayPenaltyMinutes;
+    public int ActivePenaltyKillPenaltyMinutes;
 }
