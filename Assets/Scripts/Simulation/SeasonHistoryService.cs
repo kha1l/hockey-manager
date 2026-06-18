@@ -252,7 +252,7 @@ public static class SeasonHistoryService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 
     private static string GetRulesetName(LeagueRulesData rules)

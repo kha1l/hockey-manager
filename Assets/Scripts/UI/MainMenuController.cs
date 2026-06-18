@@ -3,15 +3,25 @@ using UnityEngine.SceneManagement;
 
 public class MainMenuController : MonoBehaviour
 {
+    private const string SelectedTeamIdKey = "SelectedTeamId";
+    private const string StartNewGamePendingKey = "StartNewGamePending";
+
     public void StartNewGame()
     {
         GameSession.Clear();
+        PlayerPrefs.DeleteKey(SelectedTeamIdKey);
+        PlayerPrefs.SetInt(StartNewGamePendingKey, 1);
+        PlayerPrefs.Save();
+
         Debug.Log("Переход к выбору команды");
         SceneManager.LoadScene("TeamSelect");
     }
 
     public void LoadGame()
     {
+        PlayerPrefs.DeleteKey(StartNewGamePendingKey);
+        PlayerPrefs.Save();
+
         if (!SaveLoadService.SaveExists())
         {
             Debug.LogWarning("Сохранение не найдено");

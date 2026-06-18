@@ -14,7 +14,7 @@ public static class ProjectFilesGenerator
         "/snap/bin/code"
     };
 
-    [MenuItem("Tools/NHL Manager/Generate Project Files")]
+    [MenuItem("Tools/Continental Hockey Manager/Generate Project Files")]
     public static void GenerateProjectFiles()
     {
         EnsureExternalScriptEditor();
@@ -22,7 +22,7 @@ public static class ProjectFilesGenerator
 
         AssetDatabase.Refresh();
 
-        Debug.Log("NHL Manager: project files generated.");
+        Debug.Log("Continental Hockey Manager: project files generated.");
     }
 
     private static void EnsureExternalScriptEditor()

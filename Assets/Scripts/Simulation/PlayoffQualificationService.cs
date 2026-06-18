@@ -3,13 +3,6 @@ using System.Collections.Generic;
 
 public static class PlayoffQualificationService
 {
-    private const string EasternConference = "Eastern";
-    private const string WesternConference = "Western";
-    private const string AtlanticDivision = "Atlantic";
-    private const string MetropolitanDivision = "Metropolitan";
-    private const string CentralDivision = "Central";
-    private const string PacificDivision = "Pacific";
-
     public static PlayoffData CreatePlayoffs(SeasonData season)
     {
         PlayoffData playoffs = new PlayoffData
@@ -31,8 +24,18 @@ public static class PlayoffQualificationService
             IsCompleted = false
         };
 
-        AddConferenceFirstRound(firstRound, EasternConference, AtlanticDivision, MetropolitanDivision, season.Standings);
-        AddConferenceFirstRound(firstRound, WesternConference, CentralDivision, PacificDivision, season.Standings);
+        AddConferenceFirstRound(
+            firstRound,
+            TeamStructureService.EasternConference,
+            TeamStructureService.VolgaUralDivision,
+            TeamStructureService.SiberiaPacificDivision,
+            season.Standings);
+        AddConferenceFirstRound(
+            firstRound,
+            TeamStructureService.WesternConference,
+            TeamStructureService.CapitalDivision,
+            TeamStructureService.SouthDivision,
+            season.Standings);
 
         playoffs.IsStarted = firstRound.Series.Count > 0;
         playoffs.Rounds.Add(firstRound);

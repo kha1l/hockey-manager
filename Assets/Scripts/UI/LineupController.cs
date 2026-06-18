@@ -56,6 +56,7 @@ public class LineupController : MonoBehaviour
         }
 
         LineupService.EnsureLineup(team);
+        ChemistryService.EnsureChemistryForTeam(team);
         RenderStatus(team);
         RenderRatings(team);
         RenderSelection(team, selectedSlotType, selectedLineOrPairNumber, selectedSlotPosition, selectedPlayerId);
@@ -83,7 +84,7 @@ public class LineupController : MonoBehaviour
             ? "\nПоследнее ручное изменение: " + team.Lineup.LastManualUpdateUtc
             : "";
 
-        _statusText.text = team.City + " " + team.Name
+        _statusText.text = TeamIdentityService.GetDisplayName(team)
             + "\nСтатус: " + (isValid ? "валиден" : "требует исправления")
             + " | Ручной состав: " + manualText
             + "\n" + message
@@ -105,6 +106,8 @@ public class LineupController : MonoBehaviour
 
         PlayerFatigueService.EnsureFatigueForTeam(team);
         InjuryService.EnsureInjuryFieldsForTeam(team);
+        TeamChemistryData chemistry = team.Chemistry ?? ChemistryService.CalculateTeamChemistry(team);
+        int chemistryModifier = ChemistryConfig.GetTeamRatingModifier(chemistry.TeamChemistryScore);
         _ratingsText.text = "Offense: " + TeamRatingCalculator.CalculateOffenseRating(team)
             + " | Defense: " + TeamRatingCalculator.CalculateDefenseRating(team)
             + " | Goalie: " + TeamRatingCalculator.CalculateGoalieRating(team)
@@ -112,7 +115,16 @@ public class LineupController : MonoBehaviour
             + "\nEFF Offense: " + TeamRatingCalculator.CalculateEffectiveOffenseRating(team)
             + " | EFF Defense: " + TeamRatingCalculator.CalculateEffectiveDefenseRating(team)
             + " | EFF Goalie: " + TeamRatingCalculator.CalculateEffectiveGoalieRating(team)
-            + " | EFF Total: " + TeamRatingCalculator.CalculateEffectiveLineupOverall(team);
+            + " | EFF Total: " + TeamRatingCalculator.CalculateEffectiveLineupOverall(team)
+            + "\nTeam Chemistry: " + chemistry.TeamChemistryScore + " " + chemistry.TeamChemistryLabel
+            + " | Mod " + FormatSigned(chemistryModifier)
+            + " | Best: " + chemistry.BestUnitName + " " + chemistry.BestUnitScore
+            + " | Worst: " + chemistry.WorstUnitName + " " + chemistry.WorstUnitScore;
+    }
+
+    private static string FormatSigned(int value)
+    {
+        return value > 0 ? "+" + value : value.ToString();
     }
 
     private void RenderSelection(

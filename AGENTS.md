@@ -1,75 +1,40 @@
 # AGENTS.md
 
+Короткий контекст для Codex. Подробности держать в коде и README, не раздувать этот файл.
+
 ## Проект
 
-`nhl-manager` — Unity 6 LTS Android-игра в жанре хоккейного менеджера.
+`nhl-manager` — Unity 6 LTS Android-менеджер хоккейного клуба. Текущий бренд в игре: `Continental Hockey Manager`.
 
-Цель: рабочий MVP с меню, новой игрой, выбором команды, составом, календарем, симуляцией матчей, таблицей и сохранением.
+Цель MVP: офлайн-игра с новой игрой, выбором команды, клубным экраном, составом, матчами, календарем, таблицей, плей-офф и JSON-сохранением.
 
 ## Стек
 
-- Unity 6 LTS
-- C#
-- Android
-- JSON
-- Git
-- VS Code
-- Codex
+Unity 6 LTS, C#, Android, `JsonUtility`, Git.
 
-## Структура
+## Папки
 
-```text
-Assets/
-  Scenes/
-  Scripts/
-    Core/
-    Data/
-    Gameplay/
-    Simulation/
-    UI/
-    SaveSystem/
-    Managers/
-  Prefabs/
-  Art/
-  UI/
-  Resources/
-  ScriptableObjects/
-```
+- `Assets/Scenes` — сцены.
+- `Assets/Scripts/Core` — `GameBootstrap`, `GameSession`.
+- `Assets/Scripts/Data` — serializable data, только public fields для `JsonUtility`.
+- `Assets/Scripts/Simulation` — правила, сезон, матчи, roster, injuries, contracts.
+- `Assets/Scripts/UI` — контроллеры экранов и row views.
+- `Assets/Scripts/SaveSystem` — save/load/migrations.
+- `Assets/Scripts/Editor` — генерация сцен и Android build helpers.
+- `Assets/Resources/Teams` и `Assets/Resources/Seeds` — runtime seed/assets.
 
-## Архитектура
+## Правила работы
 
-- `Data`: сериализуемые модели (`PlayerData`, `TeamData`, `SeasonData`, `GameState`).
-- `Core`: входные точки и текущая сессия.
-- `Simulation`: матчи, календарь, таблица, будущая сезонная логика.
-- `UI`: контроллеры экранов и представления строк.
-- `SaveSystem`: сохранение и загрузка.
+- Делать маленькие безопасные шаги.
+- Сначала искать существующий сервис/модель, потом добавлять новое.
+- Не менять `.unity` текстом; обновлять сцены через Editor-скрипты.
+- Не добавлять сервер, БД, внешние API, сторонние плагины и реальные лицензированные ассеты без явной задачи.
+- Не коммитить `Library`, `Temp`, `Logs`, `.utmp`, APK/AAB и локальные IDE-файлы.
+- После изменений кратко писать, что сделано и как проверить.
 
-## Порядок MVP
+## Кодстайл
 
-1. Главное меню
-2. Новая игра
-3. Выбор команды
-4. Состав команды
-5. Симуляция матчей
-6. Турнирная таблица
-7. Календарь
-8. Сохранение игры
-
-Дальше: контракты, обмены, драфт, развитие игроков, плей-офф.
-
-## Стиль кода
-
-- Классы/методы/свойства: `PascalCase`
-- Приватные поля: `_camelCase`
-- Локальные переменные: `camelCase`
-- Для `JsonUtility` использовать `Serializable` и public fields.
-
-## Правила разработки
-
-- Делать маленькие безопасные шаги, не всю игру сразу.
-- Простота важнее сложной архитектуры.
-- Не дублировать код и проверять существующие классы перед созданием новых.
-- Не рефакторить без необходимости.
-- Не добавлять сторонние плагины, сервер, БД, реальные ассеты, логотипы, фото или внешние API без отдельного запроса.
-- Не редактировать `.unity` вручную текстом, если Unity Editor недоступен; использовать Editor-скрипты.
-- После изменений кратко объяснять, что сделано.
+- Types/methods: `PascalCase`.
+- Private fields: `_camelCase`.
+- Locals: `camelCase`.
+- Data classes для save: `[Serializable]` + public fields, не properties.

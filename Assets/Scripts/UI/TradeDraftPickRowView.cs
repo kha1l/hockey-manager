@@ -32,7 +32,7 @@ public class TradeDraftPickRowView : MonoBehaviour
         _screenController = screenController;
         _isUserPick = isUserPick;
 
-        int value = TradeValueCalculator.CalculateDraftPickValue(pick);
+        int value = TradeValueCalculator.CalculateDraftPickValue(pick, GameSession.CurrentState);
         _infoText.text = pick.DraftYear
             + " | Round " + pick.Round
             + " | from " + pick.OriginalTeamName

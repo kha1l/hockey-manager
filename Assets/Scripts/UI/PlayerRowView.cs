@@ -25,49 +25,35 @@ public class PlayerRowView : MonoBehaviour
 
     public void Initialize(PlayerData player, TeamData team)
     {
-        PlayerFatigueService.EnsureFatigueFields(player);
-        InjuryService.EnsureInjuryFields(player);
-        PlayerRoleService.EnsureRole(player);
-        _nameText.text = player.FirstName + " " + player.LastName + (player.IsEntryLevelContract ? " (ELC)" : "") + (player.IsInjured ? " (INJ)" : "");
+        if (player == null)
+        {
+            SetText(_nameText, "Игрок не найден");
+            SetText(_positionText, "");
+            SetText(_ageText, "");
+            SetText(_overallText, "");
+            SetText(_potentialText, "");
+            return;
+        }
+
+        _nameText.text = PlayerDisplayFormatter.FormatPlayerName(player);
         _positionText.text = player.Position;
         _ageText.text = player.Age.ToString();
-        _overallText.text = "OVR " + player.Overall
-            + " EFF " + PlayerFatigueService.GetEffectiveOverall(player)
-            + " " + FormatDevelopment(player.LastDevelopmentDelta)
-            + " | " + player.PlayerRole
-            + " | TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds);
+        _overallText.text = PlayerDisplayFormatter.FormatPlayerMainLine(player)
+            + "\n" + PlayerDisplayFormatter.FormatPlayerSubLine(player);
         string activeStatus = team == null
             ? ""
             : (LineupService.IsPlayerActive(team, player.Id) ? " Active" : " Scratch");
-        string fatigueDelta = player.LastGameFatigueChange == 0
-            ? ""
-            : " (" + FormatSigned(player.LastGameFatigueChange) + ")";
-        _potentialText.text = "POT " + player.Potential
-            + " | COND " + player.Condition
-            + " | FAT " + player.Fatigue + fatigueDelta
+        _potentialText.text = "EFF " + PlayerFatigueService.GetEffectiveOverall(player)
             + " | " + player.UsageCategory
             + " | ATOI " + IceTimeConfig.FormatSeconds(player.AverageTimeOnIceSeconds)
-            + activeStatus
-            + (player.IsInjured ? " | INJ " + player.InjuryDaysRemaining + " дн." : "");
+            + activeStatus;
     }
 
-    private static string FormatDevelopment(int value)
+    private static void SetText(Text text, string value)
     {
-        if (value > 0)
+        if (text != null)
         {
-            return "DEV +" + value;
+            text.text = value;
         }
-
-        if (value < 0)
-        {
-            return "DEV " + value;
-        }
-
-        return "DEV 0";
-    }
-
-    private static string FormatSigned(int value)
-    {
-        return value > 0 ? "+" + value : value.ToString();
     }
 }

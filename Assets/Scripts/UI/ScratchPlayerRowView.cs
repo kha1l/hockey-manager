@@ -27,6 +27,7 @@ public class ScratchPlayerRowView : MonoBehaviour
         PlayerFatigueService.EnsureFatigueFields(player);
         InjuryService.EnsureInjuryFields(player);
         PlayerRoleService.EnsureRole(player);
+        MoraleService.InitializePlayerMorale(player);
         _infoText.text = player.FirstName + " " + player.LastName
             + " | " + player.Position
             + " | " + player.Age
@@ -36,6 +37,8 @@ public class ScratchPlayerRowView : MonoBehaviour
             + " | TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds)
             + " | COND " + player.Condition
             + " | FAT " + player.Fatigue
+            + " | MOR " + player.Morale
+            + (player.MoraleStatus == MoraleConfig.StatusUnhappy || player.MoraleStatus == MoraleConfig.StatusVeryUnhappy ? " " + player.MoraleStatus : "")
             + " | POT " + player.Potential
             + " | $" + FormatMoney(player.Salary)
             + (player.IsInjured ? " | INJ " + player.InjuryDaysRemaining + " дн." : "");

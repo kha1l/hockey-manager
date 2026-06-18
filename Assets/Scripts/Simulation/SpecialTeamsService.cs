@@ -11,6 +11,7 @@ public static class SpecialTeamsService
             return;
         }
 
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         LineupService.EnsureLineup(team);
         if (team.SpecialTeams == null)
         {
@@ -23,9 +24,9 @@ public static class SpecialTeamsService
 
         if (!ValidateSpecialTeams(team, out string message))
         {
-            Debug.LogWarning("Special teams invalid for " + team.Name + ": " + message);
             if (IsInjuryValidationMessage(message))
             {
+                Debug.LogWarning("Special teams invalid for " + team.Name + ": " + message);
                 team.SpecialTeams.IsValid = false;
                 team.SpecialTeams.ValidationMessage = message;
                 return;
@@ -35,6 +36,7 @@ public static class SpecialTeamsService
 
             if (!ValidateSpecialTeams(team, out message))
             {
+                Debug.LogWarning("Special teams invalid for " + team.Name + ": " + message);
                 team.SpecialTeams.IsValid = false;
                 team.SpecialTeams.ValidationMessage = message;
             }
@@ -110,6 +112,7 @@ public static class SpecialTeamsService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         SpecialTeamsData specialTeams = team.SpecialTeams;
         if (specialTeams == null)
         {
@@ -194,7 +197,7 @@ public static class SpecialTeamsService
         EnsureSpecialTeams(team);
         if (team == null || team.SpecialTeams == null || team.SpecialTeams.PowerPlayUnits.Count == 0)
         {
-            return TeamRatingCalculator.CalculateOffenseRating(team);
+            return Mathf.Clamp(TeamRatingCalculator.CalculateOffenseRating(team) + CoachingStaffService.GetPowerPlayModifier(team), 40, 99);
         }
 
         float rating = 0f;
@@ -206,7 +209,7 @@ public static class SpecialTeamsService
             rating += AveragePlayers(team, GetPowerPlayIds(unit), false) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(rating), 40, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(rating) + CoachingStaffService.GetPowerPlayModifier(team), 40, 99);
     }
 
     public static int CalculatePenaltyKillRating(TeamData team)
@@ -214,7 +217,7 @@ public static class SpecialTeamsService
         EnsureSpecialTeams(team);
         if (team == null || team.SpecialTeams == null || team.SpecialTeams.PenaltyKillUnits.Count == 0)
         {
-            return TeamRatingCalculator.CalculateDefenseRating(team);
+            return Mathf.Clamp(TeamRatingCalculator.CalculateDefenseRating(team) + CoachingStaffService.GetPenaltyKillModifier(team), 40, 99);
         }
 
         float rating = 0f;
@@ -226,12 +229,18 @@ public static class SpecialTeamsService
             rating += AveragePlayers(team, GetPenaltyKillIds(unit), true) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(rating), 40, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(rating) + CoachingStaffService.GetPenaltyKillModifier(team), 40, 99);
     }
 
     public static bool IsPlayerOnPowerPlay(TeamData team, string playerId)
     {
         if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return false;
+        }
+
+        PlayerData player = FindPlayer(team, playerId);
+        if (!RosterStatusConfig.IsNhlRoster(player) || player.IsRetired || !LineupService.IsPlayerActive(team, playerId))
         {
             return false;
         }
@@ -251,6 +260,12 @@ public static class SpecialTeamsService
     public static bool IsPlayerOnPenaltyKill(TeamData team, string playerId)
     {
         if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return false;
+        }
+
+        PlayerData player = FindPlayer(team, playerId);
+        if (!RosterStatusConfig.IsNhlRoster(player) || player.IsRetired || !LineupService.IsPlayerActive(team, playerId))
         {
             return false;
         }
@@ -293,6 +308,12 @@ public static class SpecialTeamsService
             return 0;
         }
 
+        PlayerData player = FindPlayer(team, playerId);
+        if (!RosterStatusConfig.IsNhlRoster(player) || player.IsRetired || !LineupService.IsPlayerActive(team, playerId))
+        {
+            return 0;
+        }
+
         foreach (PowerPlayUnitData unit in team.SpecialTeams.PowerPlayUnits)
         {
             if (unit != null && ContainsId(GetPowerPlayIds(unit), playerId))
@@ -306,7 +327,7 @@ public static class SpecialTeamsService
 
     private static List<PlayerData> GetAvailableSkaters(TeamData team)
     {
-        List<PlayerData> skaters = LineupService.GetActiveSkaters(team);
+        List<PlayerData> skaters = FilterNotOnWaivers(LineupService.GetActiveSkaters(team));
         if (skaters.Count > 0)
         {
             List<PlayerData> availableSkaters = FilterAvailablePlayers(skaters);
@@ -322,7 +343,7 @@ public static class SpecialTeamsService
 
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Position != "G")
+            if (player != null && RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired && !player.IsOnWaivers && player.Position != "G")
             {
                 skaters.Add(player);
                 if (InjuryService.IsPlayerAvailable(player))
@@ -410,6 +431,25 @@ public static class SpecialTeamsService
                 return false;
             }
 
+            if (!RosterStatusConfig.IsNhlRoster(player))
+            {
+                message = "Игрок спецбригады не в Pro roster: " + player.FirstName + " " + player.LastName
+                    + " (" + player.RosterStatus + ")";
+                return false;
+            }
+
+            if (player.IsRetired)
+            {
+                message = "Игрок спецбригады завершил карьеру: " + player.FirstName + " " + player.LastName;
+                return false;
+            }
+
+            if (!LineupService.IsPlayerActive(team, player.Id) || player.Position == "G")
+            {
+                message = "Игрок спецбригады должен быть активным Pro skater: " + player.FirstName + " " + player.LastName;
+                return false;
+            }
+
             InjuryService.EnsureInjuryFields(player);
             if (player.IsInjured)
             {
@@ -459,7 +499,12 @@ public static class SpecialTeamsService
         foreach (string playerId in playerIds)
         {
             PlayerData player = FindPlayer(team, playerId);
-            if (player != null)
+            if (player != null
+                && RosterStatusConfig.IsNhlRoster(player)
+                && !player.IsRetired
+                && LineupService.IsPlayerActive(team, player.Id)
+                && player.Position != "G"
+                && InjuryService.IsPlayerAvailable(player))
             {
                 players.Add(player);
             }
@@ -478,7 +523,11 @@ public static class SpecialTeamsService
                 continue;
             }
 
-            if (!InjuryService.IsPlayerAvailable(player))
+            if (!RosterStatusConfig.IsNhlRoster(player)
+                || player.IsRetired
+                || !LineupService.IsPlayerActive(team, player.Id)
+                || player.Position == "G"
+                || !InjuryService.IsPlayerAvailable(player))
             {
                 continue;
             }
@@ -524,13 +573,36 @@ public static class SpecialTeamsService
 
         foreach (PlayerData player in players)
         {
-            if (InjuryService.IsPlayerAvailable(player))
+            if (RosterStatusConfig.IsNhlRoster(player)
+                && !player.IsRetired
+                && !player.IsOnWaivers
+                && player.Position != "G"
+                && InjuryService.IsPlayerAvailable(player))
             {
                 availablePlayers.Add(player);
             }
         }
 
         return availablePlayers;
+    }
+
+    private static List<PlayerData> FilterNotOnWaivers(List<PlayerData> players)
+    {
+        List<PlayerData> filteredPlayers = new List<PlayerData>();
+        if (players == null)
+        {
+            return filteredPlayers;
+        }
+
+        foreach (PlayerData player in players)
+        {
+            if (player != null && !player.IsOnWaivers)
+            {
+                filteredPlayers.Add(player);
+            }
+        }
+
+        return filteredPlayers;
     }
 
     private static int GetRequiredSpecialTeamsSkaterCount()

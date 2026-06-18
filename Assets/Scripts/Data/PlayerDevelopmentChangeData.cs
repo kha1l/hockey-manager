@@ -20,6 +20,16 @@ public class PlayerDevelopmentChangeData
     public int NewPotential;
     public int PotentialDelta;
     public string DevelopmentType;
+    public string DevelopmentEvent;
+    public int HiddenCeilingAtTime;
+    public int HiddenFloorAtTime;
+    public int DevelopmentRiskAtTime;
+    public int MoraleAtTime;
+    public int MoraleDevelopmentModifier;
+    public int LeadershipSupportAtTime;
+    public int LeadershipDevelopmentModifier;
+    public int StaffDevelopmentModifier;
+    public string StaffDevelopmentSummary;
     public string Reason;
     public string CreatedAtUtc;
 }

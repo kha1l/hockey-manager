@@ -68,7 +68,7 @@ public class DevelopmentController : MonoBehaviour
 
         List<PlayerDevelopmentChangeData> changes = new List<PlayerDevelopmentChangeData>();
         AddUserTeamChangesFirst(state, changes);
-        AddRecentChanges(state, changes, 40);
+        AddRecentChanges(state, changes, UiDisplayLimitConfig.MaxDevelopmentRows);
 
         foreach (PlayerDevelopmentChangeData change in changes)
         {
@@ -76,6 +76,13 @@ public class DevelopmentController : MonoBehaviour
             row.name = "development-" + change.ChangeId;
             row.gameObject.SetActive(true);
             row.Initialize(change);
+        }
+
+        int totalChanges = state.PlayerDevelopmentHistory.Changes.Count;
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(changes.Count, totalChanges);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(limitMessage);
         }
     }
 

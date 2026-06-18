@@ -17,16 +17,9 @@ public class ProspectRowView : MonoBehaviour
 
     public void Initialize(ProspectData prospect, GameScreenController screenController)
     {
-        _prospectId = prospect.Id;
+        _prospectId = prospect == null ? "" : prospect.Id;
         _screenController = screenController;
-        _infoText.text = "#" + prospect.ProjectedPick
-            + " | " + prospect.FirstName + " " + prospect.LastName
-            + " | " + prospect.Position
-            + " | " + prospect.Nationality
-            + " | " + prospect.Age
-            + " | OVR " + prospect.Overall
-            + " | POT " + prospect.Potential
-            + " | R" + prospect.ProjectedRound;
+        _infoText.text = PlayerDisplayFormatter.FormatProspect(prospect);
 
         _button.onClick.RemoveAllListeners();
         _button.onClick.AddListener(OnClicked);
@@ -39,4 +32,5 @@ public class ProspectRowView : MonoBehaviour
             _screenController.SelectProspect(_prospectId);
         }
     }
+
 }

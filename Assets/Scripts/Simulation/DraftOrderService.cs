@@ -181,6 +181,6 @@ public static class DraftOrderService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

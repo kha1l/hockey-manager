@@ -18,4 +18,6 @@ public class LineupSlotData
     public string PlayerRole;
     public string UsageCategory;
     public int EstimatedTimeOnIceSeconds;
+    public int Morale;
+    public string MoraleStatus;
 }

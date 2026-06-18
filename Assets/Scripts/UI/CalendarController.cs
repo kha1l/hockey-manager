@@ -33,13 +33,58 @@ public class CalendarController : MonoBehaviour
         List<ScheduleGameData> sortedSchedule = new List<ScheduleGameData>(season.Schedule);
         sortedSchedule.Sort(CompareGames);
 
-        foreach (ScheduleGameData game in sortedSchedule)
+        int rowsToShow = UiDisplayLimitConfig.ClampRowCount(sortedSchedule.Count, UiDisplayLimitConfig.MaxCalendarRows);
+        int startIndex = FindFirstVisibleGameIndex(sortedSchedule, season.CurrentDay, rowsToShow);
+        for (int i = startIndex; i < sortedSchedule.Count && i < startIndex + rowsToShow; i++)
         {
+            ScheduleGameData game = sortedSchedule[i];
             ScheduleGameRowView row = Instantiate(_gameRowPrefab, _gamesContainer);
             row.name = "game-" + game.GameNumber.ToString("00") + "-row";
             row.gameObject.SetActive(true);
             row.Initialize(game);
         }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(rowsToShow, sortedSchedule.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            ScheduleGameRowView limitRow = Instantiate(_gameRowPrefab, _gamesContainer);
+            limitRow.name = "calendar-limit-row";
+            limitRow.gameObject.SetActive(true);
+            limitRow.InitializeMessage(limitMessage);
+        }
+    }
+
+    private static int FindFirstVisibleGameIndex(List<ScheduleGameData> sortedSchedule, int currentDay, int rowsToShow)
+    {
+        if (sortedSchedule == null || sortedSchedule.Count == 0 || rowsToShow <= 0)
+        {
+            return 0;
+        }
+
+        int targetDay = currentDay <= 0 ? 1 : currentDay - 2;
+        if (targetDay < 1)
+        {
+            targetDay = 1;
+        }
+
+        int startIndex = 0;
+        for (int i = 0; i < sortedSchedule.Count; i++)
+        {
+            ScheduleGameData game = sortedSchedule[i];
+            if (game != null && game.DayNumber >= targetDay)
+            {
+                startIndex = i;
+                break;
+            }
+        }
+
+        int maxStart = sortedSchedule.Count - rowsToShow;
+        if (maxStart < 0)
+        {
+            return 0;
+        }
+
+        return startIndex > maxStart ? maxStart : startIndex;
     }
 
     private void ClearRows()

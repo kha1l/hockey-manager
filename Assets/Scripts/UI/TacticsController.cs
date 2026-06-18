@@ -39,6 +39,8 @@ public class TacticsController : MonoBehaviour
 
         SpecialTeamsService.EnsureSpecialTeams(team);
         TacticsService.EnsureTactics(team);
+        CoachingStaffService.EnsureStaffForTeam(team);
+        ChemistryService.EnsureChemistryForTeam(team);
         RenderTexts(team);
         RenderPowerPlay(team);
         RenderPenaltyKill(team);
@@ -55,7 +57,7 @@ public class TacticsController : MonoBehaviour
         }
 
         TeamTacticsData tactics = team.Tactics;
-        _presetText.text = team.City + " " + team.Name
+        _presetText.text = TeamIdentityService.GetDisplayName(team)
             + "\nPreset: " + tactics.PresetName;
         _parametersText.text = "OffensiveFocus: " + tactics.OffensiveFocus
             + " | DefensiveFocus: " + tactics.DefensiveFocus
@@ -65,8 +67,18 @@ public class TacticsController : MonoBehaviour
             + " | RiskLevel: " + tactics.RiskLevel;
 
         bool isValid = SpecialTeamsService.ValidateSpecialTeams(team, out string message);
+        TeamChemistryData chemistry = team.Chemistry ?? ChemistryService.CalculateTeamChemistry(team);
+        StaffEffectSummaryData staff = CoachingStaffService.BuildStaffEffectSummary(team);
+        string coachName = staff == null || string.IsNullOrEmpty(staff.HeadCoachName) ? "none" : staff.HeadCoachName;
+        string coachStyle = staff == null ? StaffConfig.StyleBalanced : staff.CoachingStyle;
         _ratingsText.text = "PP rating: " + SpecialTeamsService.CalculatePowerPlayRating(team)
             + " | PK rating: " + SpecialTeamsService.CalculatePenaltyKillRating(team)
+            + "\nSpecial teams chemistry: " + chemistry.SpecialTeamsChemistryAverage + " " + ChemistryConfig.GetChemistryLabel(chemistry.SpecialTeamsChemistryAverage)
+            + "\nCoach: " + coachName + " | Style: " + coachStyle
+            + " | Fit " + FormatSigned(CoachingStaffService.GetTacticalFitModifier(team))
+            + " | Discipline " + FormatSigned(staff == null ? 0 : staff.DisciplineModifier)
+            + " | PP " + FormatSigned(staff == null ? 0 : staff.PowerPlayModifier)
+            + " | PK " + FormatSigned(staff == null ? 0 : staff.PenaltyKillModifier)
             + "\nСпецбригады: " + (isValid ? "валидны" : "требуют исправления")
             + "\n" + message;
 
@@ -129,5 +141,10 @@ public class TacticsController : MonoBehaviour
 
             Destroy(child.gameObject);
         }
+    }
+
+    private static string FormatSigned(int value)
+    {
+        return value > 0 ? "+" + value : value.ToString();
     }
 }

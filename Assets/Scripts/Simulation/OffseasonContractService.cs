@@ -19,7 +19,10 @@ public static class OffseasonContractService
             team.EnsurePlayers();
             foreach (PlayerData player in team.Players)
             {
-                AdvancePlayer(player);
+                if (player != null && !player.IsRetired)
+                {
+                    AdvancePlayer(player);
+                }
             }
         }
     }
@@ -50,7 +53,7 @@ public static class OffseasonContractService
             List<PlayerData> playersToMove = new List<PlayerData>();
             foreach (PlayerData player in team.Players)
             {
-                if (player != null && player.ContractStatus == "UFA")
+                if (player != null && !player.IsRetired && player.ContractStatus == "UFA")
                 {
                     playersToMove.Add(player);
                 }
@@ -62,6 +65,9 @@ public static class OffseasonContractService
                 player.TeamId = "free-agents";
                 player.ContractStatus = "UFA";
                 player.ContractYearsRemaining = 0;
+                player.PreviousRosterStatus = player.RosterStatus;
+                player.RosterStatus = RosterStatusConfig.FreeAgent;
+                player.RosterStatusUpdatedAtUtc = System.DateTime.UtcNow.ToString("o");
 
                 if (!FreeAgentExists(state.FreeAgentPool.FreeAgents, player.Id))
                 {
@@ -88,7 +94,7 @@ public static class OffseasonContractService
             team.EnsurePlayers();
             foreach (PlayerData player in team.Players)
             {
-                if (player == null)
+                if (player == null || player.IsRetired)
                 {
                     continue;
                 }

@@ -17,6 +17,9 @@ public class TeamLineupData
     public string LastSelectedSlotType;
     public int LastSelectedLineOrPairNumber;
     public string LastSelectedSlotPosition;
+    public int TeamChemistryScore;
+    public string TeamChemistryLabel;
+    public string LastChemistryUpdateUtc;
 
     public TeamLineupData()
     {

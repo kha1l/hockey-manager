@@ -47,10 +47,13 @@ public class GoalieLineupView : MonoBehaviour
         PlayerFatigueService.EnsureFatigueFields(player);
         InjuryService.EnsureInjuryFields(player);
         PlayerRoleService.EnsureRole(player);
+        MoraleService.InitializePlayerMorale(player);
         return player.FirstName + " " + player.LastName
             + " (" + player.Position
             + " OVR " + player.Overall
             + " EFF " + PlayerFatigueService.GetEffectiveOverall(player)
+            + " MOR " + player.Morale
+            + FormatMoraleConcern(player)
             + " " + player.PlayerRole
             + " TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds)
             + " COND " + player.Condition
@@ -75,6 +78,14 @@ public class GoalieLineupView : MonoBehaviour
         }
 
         return null;
+    }
+
+    private static string FormatMoraleConcern(PlayerData player)
+    {
+        return player != null
+            && (player.MoraleStatus == MoraleConfig.StatusUnhappy || player.MoraleStatus == MoraleConfig.StatusVeryUnhappy)
+                ? " " + player.MoraleStatus
+                : "";
     }
 
     private void ConfigureButton(Button button, string slotPosition)

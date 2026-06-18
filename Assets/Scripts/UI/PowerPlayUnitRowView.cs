@@ -19,9 +19,11 @@ public class PowerPlayUnitRowView : MonoBehaviour
         }
 
         List<PlayerData> players = GetPlayers(unit, team);
+        LineChemistryData chemistry = ChemistryService.CalculatePowerPlayChemistry(team, unit);
         _infoText.text = "PP" + (unit == null ? 0 : unit.UnitNumber)
             + " | " + FormatPlayers(players)
-            + " | AVG " + AverageOverall(players);
+            + " | AVG " + AverageOverall(players)
+            + " | CHEM " + chemistry.ChemistryScore + " " + chemistry.ChemistryLabel;
     }
 
     private static List<PlayerData> GetPlayers(PowerPlayUnitData unit, TeamData team)

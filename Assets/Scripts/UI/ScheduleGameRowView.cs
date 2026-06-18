@@ -15,6 +15,14 @@ public class ScheduleGameRowView : MonoBehaviour
         _descriptionText.text = GetPrefix(game) + "День " + game.DayNumber + ". " + GetMatchText(game);
     }
 
+    public void InitializeMessage(string message)
+    {
+        if (_descriptionText != null)
+        {
+            _descriptionText.text = message;
+        }
+    }
+
     private static string GetMatchText(ScheduleGameData game)
     {
         if (!game.IsPlayed || game.Result == null)

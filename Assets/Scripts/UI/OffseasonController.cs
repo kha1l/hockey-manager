@@ -48,13 +48,16 @@ public class OffseasonController : MonoBehaviour
         bool canStartNextSeason = SeasonTransitionService.CanStartNextSeason(state, out string message);
         string status = canStartNextSeason ? "Следующий сезон доступен" : "Завершите плей-офф и драфт";
         string champion = GetChampionText(state);
+        LeagueSeasonHistoryData lastLeagueHistory = state == null ? null : state.LastLeagueSeasonHistory;
 
         _statusText.text = "Фаза: " + phase
             + "\nТекущий сезон: " + currentSeason
             + "\nСледующий сезон: " + nextSeason
             + "\nСтатус: " + status
             + "\n" + message
-            + "\nЧемпион прошлого сезона: " + champion;
+            + "\nЧемпион прошлого сезона: " + champion
+            + "\nПоследний recap: " + FormatLeagueRecapStatus(lastLeagueHistory)
+            + "\nПеред переходом сезона владелец оценит текущий сезон.";
     }
 
     private void RenderSummary(GameState state)
@@ -67,15 +70,31 @@ public class OffseasonController : MonoBehaviour
         }
 
         team.EnsurePlayers();
+        ContractExtensionService.EnsureExtensionDataForTeam(state, team);
         TeamFinanceData finance = SalaryCapService.CalculateTeamFinance(team);
+        OwnerProfileData ownerProfile = OwnerGoalService.GetOwnerProfile(state, team);
+        OwnerSeasonEvaluationData lastEvaluation = ownerProfile == null ? null : ownerProfile.LastSeasonEvaluation;
         CountContractStatuses(team.Players, out int expiringCount, out int rfaCount, out int ufaCount);
+        ContractExtensionSummaryData extensionSummary = ContractExtensionService.BuildSummary(state, team);
+        LeagueSeasonHistoryData lastLeagueHistory = state == null ? null : state.LastLeagueSeasonHistory;
 
         _summaryText.text = "Expiring: " + expiringCount
             + " | RFA: " + rfaCount
             + " | UFA: " + ufaCount
+            + "\nВнимание: игроки с истекающими контрактами без продления могут стать UFA/RFA"
+            + "\nEligible extensions: " + (extensionSummary == null ? 0 : extensionSummary.EligiblePlayers)
+            + " | Low interest: " + (extensionSummary == null ? 0 : extensionSummary.LowInterestCount)
+            + "\nОткройте панель Продления перед переходом сезона"
             + "\nRoster: " + finance.PlayerCount + " / " + SalaryCapConfig.MaxRosterSize
             + "\nPayroll: " + FormatMoney(finance.Payroll)
-            + " | Cap space: " + FormatMoney(finance.CapSpace);
+            + " | Cap space: " + FormatMoney(finance.CapSpace)
+            + "\nOwner: trust " + (ownerProfile == null ? 0 : ownerProfile.GmTrust)
+            + " | satisfaction " + (ownerProfile == null ? 0 : ownerProfile.OwnerSatisfaction)
+            + " | job security " + (ownerProfile == null ? "нет данных" : ownerProfile.JobSecurity)
+            + "\nLast owner evaluation: " + FormatOwnerEvaluation(lastEvaluation)
+            + "\nNext season goals: " + FormatCurrentOwnerGoals(ownerProfile)
+            + "\nSeason recap: " + FormatLeagueRecapSummary(state, lastLeagueHistory)
+            + "\nRecap news: " + FormatLatestRecapNews(state);
     }
 
     private void RenderHistory(GameState state)
@@ -193,6 +212,17 @@ public class OffseasonController : MonoBehaviour
         return null;
     }
 
+    private static string FormatLatestRecapNews(GameState state)
+    {
+        List<NewsItemData> news = NewsFeedService.GetNewsByCategory(state, NewsConfig.CategorySeasonRecap, 1);
+        if (news == null || news.Count == 0 || news[0] == null)
+        {
+            return "нет";
+        }
+
+        return string.IsNullOrEmpty(news[0].Title) ? "нет данных" : news[0].Title;
+    }
+
     private static void CountContractStatuses(List<PlayerData> players, out int expiringCount, out int rfaCount, out int ufaCount)
     {
         expiringCount = 0;
@@ -224,6 +254,98 @@ public class OffseasonController : MonoBehaviour
                 ufaCount++;
             }
         }
+    }
+
+    private static string FormatOwnerEvaluation(OwnerSeasonEvaluationData evaluation)
+    {
+        if (evaluation == null)
+        {
+            return "ещё не проводилась";
+        }
+
+        string delta = evaluation.TrustDelta >= 0 ? "+" + evaluation.TrustDelta : evaluation.TrustDelta.ToString();
+        return "trust " + evaluation.TrustBefore + " -> " + evaluation.TrustAfter
+            + " (" + delta + ")"
+            + " | goals " + evaluation.GoalsCompleted + "/" + (evaluation.GoalsCompleted + evaluation.GoalsFailed)
+            + " | " + evaluation.JobSecurity;
+    }
+
+    private static string FormatCurrentOwnerGoals(OwnerProfileData profile)
+    {
+        if (profile == null || profile.CurrentGoals == null || profile.CurrentGoals.Count == 0)
+        {
+            return "нет данных";
+        }
+
+        foreach (OwnerGoalData goal in profile.CurrentGoals)
+        {
+            if (goal != null && goal.GoalType == OwnerGoalConfig.GoalTypePrimary)
+            {
+                return goal.Title + " (" + goal.ProgressPercent + "%)";
+            }
+        }
+
+        return profile.CurrentGoals[0] == null ? "нет данных" : profile.CurrentGoals[0].Title;
+    }
+
+    private static string FormatLeagueRecapStatus(LeagueSeasonHistoryData history)
+    {
+        if (history == null)
+        {
+            return "ещё не создан";
+        }
+
+        return FormatSeason(history.SeasonStartYear, history.SeasonEndYear)
+            + " | champion " + SafeText(history.ChampionTeamName)
+            + " | finalist " + SafeText(history.FinalistTeamName);
+    }
+
+    private static string FormatLeagueRecapSummary(GameState state, LeagueSeasonHistoryData history)
+    {
+        if (history == null)
+        {
+            return "итоги сезона появятся после завершения плей-офф и драфта";
+        }
+
+        AwardWinnerData mvp = FindAward(state == null ? null : state.LastSeasonAwards, AwardsConfig.LeagueMvp);
+        string mvpName = mvp == null ? history.MvpPlayerName : mvp.PlayerName;
+        int awardsCount = state == null || state.LastSeasonAwards == null || state.LastSeasonAwards.Awards == null
+            ? 0
+            : state.LastSeasonAwards.Awards.Count;
+        int recordsCount = state == null || state.LeagueRecords == null || state.LeagueRecords.Records == null
+            ? 0
+            : state.LeagueRecords.Records.Count;
+
+        return "Champion " + SafeText(history.ChampionTeamName)
+            + " | Finalist " + SafeText(history.FinalistTeamName)
+            + " | MVP " + SafeText(mvpName)
+            + " | Top scorer " + SafeText(history.TopScorerPlayerName) + " " + history.TopScorerPoints + "P"
+            + " | Awards " + awardsCount
+            + " | Records tracked " + recordsCount
+            + " | User " + SafeText(history.UserTeamResult);
+    }
+
+    private static AwardWinnerData FindAward(SeasonAwardsData awards, string awardType)
+    {
+        if (awards == null || awards.Awards == null)
+        {
+            return null;
+        }
+
+        foreach (AwardWinnerData award in awards.Awards)
+        {
+            if (award != null && award.AwardType == awardType)
+            {
+                return award;
+            }
+        }
+
+        return null;
+    }
+
+    private static string SafeText(string value)
+    {
+        return string.IsNullOrEmpty(value) ? "нет данных" : value;
     }
 
     private static string FormatSeason(int startYear, int endYear)

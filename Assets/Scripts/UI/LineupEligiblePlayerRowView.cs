@@ -61,6 +61,7 @@ public class LineupEligiblePlayerRowView : MonoBehaviour
         PlayerFatigueService.EnsureFatigueFields(player);
         InjuryService.EnsureInjuryFields(player);
         PlayerRoleService.EnsureRole(player);
+        MoraleService.InitializePlayerMorale(player);
         string injuryText = player.IsInjured ? " | INJ " + player.InjuryDaysRemaining + " дн." : "";
         return player.FirstName + " " + player.LastName
             + " | " + player.Position
@@ -72,6 +73,8 @@ public class LineupEligiblePlayerRowView : MonoBehaviour
             + " | TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds)
             + " | COND " + player.Condition
             + " | FAT " + player.Fatigue
+            + " | MOR " + player.Morale
+            + (player.MoraleStatus == MoraleConfig.StatusUnhappy || player.MoraleStatus == MoraleConfig.StatusVeryUnhappy ? " " + player.MoraleStatus : "")
             + injuryText;
     }
 }

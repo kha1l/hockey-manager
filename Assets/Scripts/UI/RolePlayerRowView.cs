@@ -67,8 +67,12 @@ public class RolePlayerRowView : MonoBehaviour
             + " | TOI " + IceTimeConfig.FormatSeconds(usage.EstimatedTimeOnIceSeconds)
             + " | COND " + usage.Condition
             + " | FAT " + usage.Fatigue
+            + " | MOR " + usage.Morale + " " + usage.MoraleStatus
+            + " | RoleSat " + usage.RoleSatisfaction
+            + " | IceSat " + usage.IceTimeSatisfaction
             + " | " + status
             + specialTeams
+            + (usage.WantsTrade ? " | TRADE REQ" : "")
             + (usage.IsInjured ? " | INJ" : "");
     }
 }

@@ -4,10 +4,10 @@ public static class LeagueRulesConfig
     {
         return new LeagueRulesData
         {
-            Ruleset = "NHL 2026-27",
-            RulesetName = "NHL 2026-27",
-            Cba = "NHL/NHLPA CBA 2026-2030",
-            CbaName = "NHL/NHLPA CBA 2026-2030",
+            Ruleset = "Continental League 2026-27",
+            RulesetName = "Continental League 2026-27",
+            Cba = "NHL-style CBA 2026-2030",
+            CbaName = "NHL-style CBA 2026-2030",
             RulesSeasonStartYear = SalaryCapConfig.RulesSeasonStartYear,
             RegularSeasonGamesPerTeam = SalaryCapConfig.TargetGamesPerTeam,
             PreseasonGamesPerTeam = 4,

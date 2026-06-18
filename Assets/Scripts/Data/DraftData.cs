@@ -11,6 +11,7 @@ public class DraftData
     public int TotalRounds;
     public int PicksPerRound;
     public string DraftStatus;
+    public DraftClassProfileData ClassProfile;
     public List<ProspectData> Prospects = new List<ProspectData>();
     public List<DraftPickData> DraftOrder = new List<DraftPickData>();
 
@@ -29,6 +30,11 @@ public class DraftData
         if (DraftOrder == null)
         {
             DraftOrder = new List<DraftPickData>();
+        }
+
+        if (ClassProfile == null)
+        {
+            ClassProfile = DraftClassProfileGenerator.CreateFallbackProfile(DraftYear);
         }
     }
 }

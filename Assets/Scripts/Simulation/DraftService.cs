@@ -40,16 +40,68 @@ public static class DraftService
         if (!state.Draft.IsInitialized)
         {
             int draftYear = DraftPickOwnershipService.GetDraftYear(state);
+            DraftClassProfileData profile = DraftClassProfileGenerator.GenerateProfile(draftYear);
             state.Draft.DraftYear = draftYear;
             state.Draft.TotalRounds = DraftConfig.DraftRounds;
             state.Draft.PicksPerRound = DraftConfig.PicksPerRound;
-            state.Draft.Prospects = DraftClassGenerator.CreateDraftClass(draftYear);
+            state.Draft.ClassProfile = profile;
+            state.Draft.Prospects = DraftClassGenerator.CreateDraftClass(draftYear, profile);
             state.Draft.DraftOrder = DraftOrderService.CreateDraftOrder(state);
             state.Draft.CurrentPickIndex = 0;
             state.Draft.DraftStatus = "InProgress";
             state.Draft.IsInitialized = true;
             state.Draft.IsCompleted = false;
         }
+
+        EnsureDraftClassProfile(state);
+        ProspectRiskService.EnsureRiskProfilesForDraft(state);
+        ScoutingService.EnsureScoutingForDraft(state);
+    }
+
+    public static void EnsureDraftClassProfile(GameState state)
+    {
+        if (state == null)
+        {
+            return;
+        }
+
+        if (state.Draft == null)
+        {
+            state.Draft = new DraftData();
+        }
+
+        state.Draft.EnsureCollections();
+        int draftYear = state.Draft.DraftYear > 0
+            ? state.Draft.DraftYear
+            : DraftPickOwnershipService.GetDraftYear(state);
+        state.Draft.ClassProfile = NormalizeDraftClassProfile(state.Draft.ClassProfile, draftYear);
+
+        if (state.Draft.Prospects != null && state.Draft.Prospects.Count > 0)
+        {
+            DraftClassGenerator.EnsureRanksAndMetadata(state.Draft.Prospects, state.Draft.ClassProfile, draftYear);
+        }
+    }
+
+    public static string GetDraftClassSummary(GameState state)
+    {
+        EnsureDraftClassProfile(state);
+        if (state == null
+            || state.Draft == null
+            || state.Draft.ClassProfile == null
+            || state.Draft.Prospects == null
+            || state.Draft.Prospects.Count == 0)
+        {
+            return "Draft class: not generated";
+        }
+
+        DraftClassProfileData profile = state.Draft.ClassProfile;
+        string summary = string.IsNullOrEmpty(profile.Summary)
+            ? DraftClassConfig.BuildClassSummary(profile)
+            : profile.Summary;
+        return "Draft class: " + summary
+            + " | Elite: " + profile.ExpectedEliteProspects
+            + " | 1st-round talent: " + profile.ExpectedFirstRoundTalent
+            + " | Depth: " + profile.ExpectedNhlDepthPlayers;
     }
 
     public static bool IsDraftAvailable(GameState state)
@@ -98,6 +150,7 @@ public static class DraftService
         {
             if (prospect != null && !prospect.IsDrafted)
             {
+                ScoutingService.EnsureProspectScouting(prospect, GetProspectRank(prospect, prospects.Count + 1));
                 prospects.Add(prospect);
             }
         }
@@ -201,6 +254,7 @@ public static class DraftService
 
     private static ProspectData ChooseBestAvailableProspect(GameState state, DraftPickData pick)
     {
+        // TODO: Future: CPU draft should account for boom/bust risk, scouting uncertainty, and team needs.
         List<ProspectData> prospects = GetAvailableProspects(state);
         if (prospects.Count == 0)
         {
@@ -212,6 +266,8 @@ public static class DraftService
 
     private static void ApplyPick(GameState state, DraftPickData currentPick, ProspectData prospect)
     {
+        ProspectRiskService.EnsureRiskProfile(prospect, GetProspectRank(prospect, currentPick.OverallPick));
+
         currentPick.IsCompleted = true;
         currentPick.SelectedProspectId = prospect.Id;
         currentPick.SelectedProspectName = prospect.FirstName + " " + prospect.LastName;
@@ -231,6 +287,7 @@ public static class DraftService
 
         state.DraftHistory.EnsureCompletedPicks();
         state.DraftHistory.CompletedPicks.Add(ClonePick(currentPick));
+        EventNewsService.CreateDraftPickNews(state, currentPick);
 
         DraftPickOwnershipData ownership = DraftPickOwnershipService.FindPick(state, currentPick.PickId);
         if (ownership != null)
@@ -313,6 +370,12 @@ public static class DraftService
 
     private static int CompareAvailableProspects(ProspectData left, ProspectData right)
     {
+        int rankComparison = GetProspectRank(left, 999).CompareTo(GetProspectRank(right, 999));
+        if (rankComparison != 0)
+        {
+            return rankComparison;
+        }
+
         int potentialComparison = right.Potential.CompareTo(left.Potential);
         if (potentialComparison != 0)
         {
@@ -320,11 +383,55 @@ public static class DraftService
         }
 
         int overallComparison = right.Overall.CompareTo(left.Overall);
-        if (overallComparison != 0)
+        return overallComparison != 0 ? overallComparison : left.Age.CompareTo(right.Age);
+    }
+
+    private static DraftClassProfileData NormalizeDraftClassProfile(DraftClassProfileData profile, int draftYear)
+    {
+        if (profile == null
+            || !DraftClassConfig.IsValidStrengthType(profile.StrengthType)
+            || !DraftClassConfig.IsValidDepthType(profile.DepthType)
+            || !DraftClassConfig.IsValidPositionalTheme(profile.PositionalTheme))
         {
-            return overallComparison;
+            return DraftClassProfileGenerator.CreateFallbackProfile(draftYear);
         }
 
-        return left.Age.CompareTo(right.Age);
+        if (profile.DraftYear <= 0)
+        {
+            profile.DraftYear = draftYear;
+        }
+
+        if (string.IsNullOrEmpty(profile.ProfileId))
+        {
+            profile.ProfileId = "draft-class-profile-fallback-" + profile.DraftYear;
+        }
+
+        if (string.IsNullOrEmpty(profile.GeneratedAtUtc))
+        {
+            profile.GeneratedAtUtc = System.DateTime.UtcNow.ToString("o");
+        }
+
+        DraftClassProfileGenerator.ApplyProfileModifiers(profile);
+        if (string.IsNullOrEmpty(profile.Summary))
+        {
+            profile.Summary = DraftClassConfig.BuildClassSummary(profile);
+        }
+
+        return profile;
+    }
+
+    private static int GetProspectRank(ProspectData prospect, int fallbackRank)
+    {
+        if (prospect == null)
+        {
+            return fallbackRank;
+        }
+
+        if (prospect.DraftRank > 0)
+        {
+            return prospect.DraftRank;
+        }
+
+        return prospect.ProjectedPick > 0 ? prospect.ProjectedPick : fallbackRank;
     }
 }

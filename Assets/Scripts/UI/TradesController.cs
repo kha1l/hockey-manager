@@ -12,17 +12,21 @@ public class TradesController : MonoBehaviour
     [SerializeField] private Text _selectedOtherTeamText;
     [SerializeField] private Text _selectedOtherPlayerText;
     [SerializeField] private Text _selectedOtherPickText;
+    [SerializeField] private Text _tradePartnerNeedsText;
+    [SerializeField] private Text _tradeAiDecisionText;
     [SerializeField] private Transform _userPlayersContainer;
     [SerializeField] private Transform _userPicksContainer;
     [SerializeField] private Transform _otherTeamsContainer;
     [SerializeField] private Transform _otherPlayersContainer;
     [SerializeField] private Transform _otherPicksContainer;
+    [SerializeField] private Transform _tradeBlockContainer;
     [SerializeField] private Transform _historyContainer;
     [SerializeField] private TradePlayerRowView _userPlayerRowPrefab;
     [SerializeField] private TradeDraftPickRowView _userPickRowPrefab;
     [SerializeField] private TradeTeamRowView _teamRowPrefab;
     [SerializeField] private TradePlayerRowView _otherPlayerRowPrefab;
     [SerializeField] private TradeDraftPickRowView _otherPickRowPrefab;
+    [SerializeField] private TradeBlockPlayerRowView _tradeBlockRowPrefab;
     [SerializeField] private TradeHistoryRowView _historyRowPrefab;
     [SerializeField] private GameScreenController _screenController;
 
@@ -41,17 +45,21 @@ public class TradesController : MonoBehaviour
         Text selectedOtherTeamText,
         Text selectedOtherPlayerText,
         Text selectedOtherPickText,
+        Text tradePartnerNeedsText,
+        Text tradeAiDecisionText,
         Transform userPlayersContainer,
         Transform userPicksContainer,
         Transform otherTeamsContainer,
         Transform otherPlayersContainer,
         Transform otherPicksContainer,
+        Transform tradeBlockContainer,
         Transform historyContainer,
         TradePlayerRowView userPlayerRowPrefab,
         TradeDraftPickRowView userPickRowPrefab,
         TradeTeamRowView teamRowPrefab,
         TradePlayerRowView otherPlayerRowPrefab,
         TradeDraftPickRowView otherPickRowPrefab,
+        TradeBlockPlayerRowView tradeBlockRowPrefab,
         TradeHistoryRowView historyRowPrefab,
         GameScreenController screenController)
     {
@@ -62,17 +70,21 @@ public class TradesController : MonoBehaviour
         _selectedOtherTeamText = selectedOtherTeamText;
         _selectedOtherPlayerText = selectedOtherPlayerText;
         _selectedOtherPickText = selectedOtherPickText;
+        _tradePartnerNeedsText = tradePartnerNeedsText;
+        _tradeAiDecisionText = tradeAiDecisionText;
         _userPlayersContainer = userPlayersContainer;
         _userPicksContainer = userPicksContainer;
         _otherTeamsContainer = otherTeamsContainer;
         _otherPlayersContainer = otherPlayersContainer;
         _otherPicksContainer = otherPicksContainer;
+        _tradeBlockContainer = tradeBlockContainer;
         _historyContainer = historyContainer;
         _userPlayerRowPrefab = userPlayerRowPrefab;
         _userPickRowPrefab = userPickRowPrefab;
         _teamRowPrefab = teamRowPrefab;
         _otherPlayerRowPrefab = otherPlayerRowPrefab;
         _otherPickRowPrefab = otherPickRowPrefab;
+        _tradeBlockRowPrefab = tradeBlockRowPrefab;
         _historyRowPrefab = historyRowPrefab;
         _screenController = screenController;
     }
@@ -110,6 +122,9 @@ public class TradesController : MonoBehaviour
         RenderTeams();
         RenderOtherTeamPlayers();
         RenderOtherTeamPicks();
+        RenderTradePartnerProfile();
+        RenderTradeBlock();
+        RenderAiDecision();
         RenderHistory();
     }
 
@@ -118,6 +133,9 @@ public class TradesController : MonoBehaviour
         _selectedOtherTeamId = otherTeamId;
         RenderOtherTeamPlayers();
         RenderOtherTeamPicks();
+        RenderTradePartnerProfile();
+        RenderTradeBlock();
+        RenderAiDecision();
     }
 
     private void RenderDateAndStatus()
@@ -201,12 +219,20 @@ public class TradesController : MonoBehaviour
             return;
         }
 
-        foreach (PlayerData player in userTeam.Players)
+        int shown = UiDisplayLimitConfig.ClampRowCount(userTeam.Players.Count, UiDisplayLimitConfig.MaxRosterRows);
+        for (int i = 0; i < shown; i++)
         {
+            PlayerData player = userTeam.Players[i];
             TradePlayerRowView row = Instantiate(_userPlayerRowPrefab, _userPlayersContainer);
             row.name = player.Id + "-trade-user-row";
             row.gameObject.SetActive(true);
             row.InitializeUserPlayer(player, _screenController);
+        }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, userTeam.Players.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_userPlayersContainer, limitMessage);
         }
     }
 
@@ -277,13 +303,101 @@ public class TradesController : MonoBehaviour
             return;
         }
 
-        foreach (PlayerData player in otherTeam.Players)
+        int shown = UiDisplayLimitConfig.ClampRowCount(otherTeam.Players.Count, UiDisplayLimitConfig.MaxRosterRows);
+        for (int i = 0; i < shown; i++)
         {
+            PlayerData player = otherTeam.Players[i];
             TradePlayerRowView row = Instantiate(_otherPlayerRowPrefab, _otherPlayersContainer);
             row.name = player.Id + "-trade-other-row";
             row.gameObject.SetActive(true);
             row.InitializeOtherPlayer(player, _screenController);
         }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, otherTeam.Players.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_otherPlayersContainer, limitMessage);
+        }
+    }
+
+    private void RenderTradePartnerProfile()
+    {
+        if (_tradePartnerNeedsText == null)
+        {
+            return;
+        }
+
+        TeamTradeProfileService.EnsureTradeProfiles(_state);
+        TeamTradeProfileData profile = TeamTradeProfileService.GetTradeProfile(_state, _selectedOtherTeamId);
+        if (profile == null || profile.Needs == null)
+        {
+            _tradePartnerNeedsText.text = "Team needs: выберите CPU-команду";
+            return;
+        }
+
+        _tradePartnerNeedsText.text = "Team needs: " + profile.TeamName
+            + " | " + profile.Direction
+            + " | Need: " + profile.Needs.PrimaryNeed + " / " + profile.Needs.SecondaryNeed
+            + "\nBuyer " + profile.BuyerScore
+            + " | Seller " + profile.SellerScore
+            + " | Cap pressure " + profile.CapPressureScore
+            + " | Roster pressure " + profile.RosterPressureScore;
+    }
+
+    private void RenderTradeBlock()
+    {
+        if (_tradeBlockContainer == null || _tradeBlockRowPrefab == null)
+        {
+            return;
+        }
+
+        ClearRows(_tradeBlockContainer, _tradeBlockRowPrefab.transform);
+        _tradeBlockRowPrefab.gameObject.SetActive(false);
+
+        TeamTradeProfileData profile = TeamTradeProfileService.GetTradeProfile(_state, _selectedOtherTeamId);
+        if (profile == null || profile.TradeBlock == null || profile.TradeBlock.Count == 0)
+        {
+            CreateInfoRow(_tradeBlockContainer, "Trade block пуст");
+            return;
+        }
+
+        int shown = UiDisplayLimitConfig.ClampRowCount(profile.TradeBlock.Count, UiDisplayLimitConfig.MaxTradeBlockRows);
+        for (int i = 0; i < shown; i++)
+        {
+            TradeBlockPlayerData player = profile.TradeBlock[i];
+            TradeBlockPlayerRowView row = Instantiate(_tradeBlockRowPrefab, _tradeBlockContainer);
+            row.name = player.PlayerId + "-trade-block-row";
+            row.gameObject.SetActive(true);
+            row.Initialize(player, _screenController);
+        }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, profile.TradeBlock.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_tradeBlockContainer, limitMessage);
+        }
+    }
+
+    private void RenderAiDecision()
+    {
+        if (_tradeAiDecisionText == null)
+        {
+            return;
+        }
+
+        TradeProposalData proposal = GetLastTradeProposal();
+        if (proposal == null)
+        {
+            _tradeAiDecisionText.text = "AI decision: предложений пока нет";
+            return;
+        }
+
+        string reason = string.IsNullOrEmpty(proposal.AiDecisionReason)
+            ? proposal.RejectionReason
+            : proposal.AiDecisionReason;
+        _tradeAiDecisionText.text = "AI decision: " + proposal.Status
+            + " | score " + proposal.AiAcceptanceScore
+            + "\n" + reason;
     }
 
     private void RenderHistory()
@@ -317,18 +431,41 @@ public class TradesController : MonoBehaviour
             && _selectedOtherTeamText != null
             && _selectedOtherPlayerText != null
             && _selectedOtherPickText != null
+            && _tradePartnerNeedsText != null
+            && _tradeAiDecisionText != null
             && _userPlayersContainer != null
             && _userPicksContainer != null
             && _otherTeamsContainer != null
             && _otherPlayersContainer != null
             && _otherPicksContainer != null
+            && _tradeBlockContainer != null
             && _historyContainer != null
             && _userPlayerRowPrefab != null
             && _userPickRowPrefab != null
             && _teamRowPrefab != null
             && _otherPlayerRowPrefab != null
             && _otherPickRowPrefab != null
+            && _tradeBlockRowPrefab != null
             && _historyRowPrefab != null;
+    }
+
+    private TradeProposalData GetLastTradeProposal()
+    {
+        if (_state == null || _state.TradeHistory == null || _state.TradeHistory.Trades == null || _state.TradeHistory.Trades.Count == 0)
+        {
+            return null;
+        }
+
+        for (int i = _state.TradeHistory.Trades.Count - 1; i >= 0; i--)
+        {
+            TradeProposalData proposal = _state.TradeHistory.Trades[i];
+            if (proposal != null)
+            {
+                return proposal;
+            }
+        }
+
+        return null;
     }
 
     private TeamData GetUserTeam()
@@ -364,7 +501,7 @@ public class TradesController : MonoBehaviour
         team.EnsurePlayers();
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Id == playerId)
+            if (player != null && !player.IsRetired && player.Id == playerId)
             {
                 return player;
             }
@@ -430,7 +567,7 @@ public class TradesController : MonoBehaviour
 
     private static string GetTeamName(TeamData team)
     {
-        return team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 
     private static string GetPickName(DraftPickOwnershipData pick)

@@ -24,11 +24,9 @@ public class InjuryRowView : MonoBehaviour
         }
 
         InjuryService.EnsureInjuryFields(player);
-        string teamName = team == null ? "" : team.City + " " + team.Name + " | ";
-        _infoText.text = teamName
-            + player.FirstName + " " + player.LastName
-            + " | " + player.Position
-            + " | " + player.InjuryType
+        string teamName = team == null ? "" : TeamIdentityService.GetDisplayName(team) + " | ";
+        _infoText.text = teamName + PlayerDisplayFormatter.FormatPlayerCompact(player)
+            + "\n" + player.InjuryType
             + " | " + player.InjurySeverity
             + " | " + player.InjuryDaysRemaining + " дн."
             + " | Возврат: " + player.ExpectedReturnDate;
@@ -51,7 +49,7 @@ public class InjuryRowView : MonoBehaviour
         _infoText.text = injury.PlayerName
             + " | " + injury.TeamName
             + " | " + injury.Position
-            + " | " + injury.InjuryType
+            + "\n" + injury.InjuryType
             + " | " + injury.InjurySeverity
             + " | " + injury.InjuryDays + " дн."
             + " | " + status

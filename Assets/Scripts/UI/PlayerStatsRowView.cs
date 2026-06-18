@@ -12,6 +12,11 @@ public class PlayerStatsRowView : MonoBehaviour
 
     public void InitializeSkater(PlayerSeasonStatsData stats)
     {
+        InitializeSkater(stats, null);
+    }
+
+    public void InitializeSkater(PlayerSeasonStatsData stats, PlayerData player)
+    {
         _text.text = stats.PlayerName
             + " | " + stats.Position
             + " | " + stats.GamesPlayed
@@ -22,10 +27,16 @@ public class PlayerStatsRowView : MonoBehaviour
             + " | PPP " + stats.PowerPlayPoints
             + " | PIM " + stats.PenaltyMinutes
             + " | " + stats.Shots
-            + " | " + stats.PlusMinus;
+            + " | " + stats.PlusMinus
+            + FormatSkaterCareer(player);
     }
 
     public void InitializeGoalie(PlayerSeasonStatsData stats)
+    {
+        InitializeGoalie(stats, null);
+    }
+
+    public void InitializeGoalie(PlayerSeasonStatsData stats, PlayerData player)
     {
         _text.text = stats.PlayerName
             + " | " + stats.GoalieGamesPlayed
@@ -35,11 +46,37 @@ public class PlayerStatsRowView : MonoBehaviour
             + " | ATOI " + IceTimeConfig.FormatSeconds(stats.AverageTimeOnIceSeconds)
             + " | " + stats.Saves
             + " | " + stats.GoalsAgainst
-            + " | " + stats.Shutouts;
+            + " | " + stats.Shutouts
+            + FormatGoalieCareer(player);
     }
 
     public void InitializeMessage(string message)
     {
         _text.text = message;
+    }
+
+    private static string FormatSkaterCareer(PlayerData player)
+    {
+        if (player == null || player.CareerGamesPlayed <= 0)
+        {
+            return "";
+        }
+
+        return " | CAR " + player.CareerGoals + "G "
+            + player.CareerAssists + "A "
+            + player.CareerPoints + "P"
+            + " | AW " + player.CareerAwardsCount;
+    }
+
+    private static string FormatGoalieCareer(PlayerData player)
+    {
+        if (player == null || player.CareerGamesPlayed <= 0)
+        {
+            return "";
+        }
+
+        return " | CAR " + player.CareerWins + "W "
+            + player.CareerShutouts + "SO"
+            + " | AW " + player.CareerAwardsCount;
     }
 }

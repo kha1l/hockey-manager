@@ -22,6 +22,8 @@ public static class PlayerGameStatsGenerator
         PlayerRoleService.EnsureRolesForTeam(awayTeam);
         IceTimeService.EnsureUsageForTeam(homeTeam);
         IceTimeService.EnsureUsageForTeam(awayTeam);
+        ChemistryService.EnsureChemistryForTeam(homeTeam);
+        ChemistryService.EnsureChemistryForTeam(awayTeam);
 
         GenerateTeamStats(result, homeTeam, true, gameStats);
         GenerateTeamStats(result, awayTeam, false, gameStats);
@@ -32,6 +34,9 @@ public static class PlayerGameStatsGenerator
             stat.PowerPlayPoints = stat.PowerPlayGoals + stat.PowerPlayAssists;
             stat.ShortHandedPoints = stat.ShortHandedGoals + stat.ShortHandedAssists;
         }
+
+        IncrementNhlGamesPlayed(homeTeam, gameStats);
+        IncrementNhlGamesPlayed(awayTeam, gameStats);
 
         return gameStats;
     }
@@ -207,7 +212,10 @@ public static class PlayerGameStatsGenerator
         List<PlayerData> goalies = new List<PlayerData>();
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Position == "G" && InjuryService.IsPlayerAvailable(player))
+            if (player != null
+                && RosterStatusConfig.IsNhlRoster(player)
+                && player.Position == "G"
+                && InjuryService.IsPlayerAvailable(player))
             {
                 goalies.Add(player);
             }
@@ -308,6 +316,11 @@ public static class PlayerGameStatsGenerator
 
     private static int GetSkaterWeight(TeamData team, PlayerData player, string context)
     {
+        if (!RosterStatusConfig.IsNhlRoster(player))
+        {
+            return 0;
+        }
+
         int positionBonus = player.Position == "D" ? 12 : 32;
         int usageWeight = team == null ? 0 : IceTimeService.GetUsageWeightForStats(team, player);
         if (usageWeight <= 0)
@@ -321,17 +334,121 @@ public static class PlayerGameStatsGenerator
         }
 
         float roleModifier = GetRoleModifier(player, context);
-        int weight = Mathf.RoundToInt(usageWeight * (PlayerFatigueService.GetEffectiveOverall(player) + positionBonus) * roleModifier);
+        float chemistryModifier = GetLineChemistryStatsModifier(team, player);
+        int weight = Mathf.RoundToInt(usageWeight * (PlayerFatigueService.GetEffectiveOverall(player) + positionBonus) * roleModifier * chemistryModifier);
         return Mathf.Max(1, weight);
     }
 
     private static int GetPowerPlayWeight(TeamData team, PlayerData player, string context)
     {
+        if (!RosterStatusConfig.IsNhlRoster(player) || !LineupService.IsPlayerActive(team, player.Id))
+        {
+            return 0;
+        }
+
         int unitNumber = SpecialTeamsService.GetPowerPlayUnitNumberForPlayer(team, player.Id);
         int unitWeight = unitNumber == 1 ? 5 : 3;
         int positionBonus = player.Position == "D" ? 8 : 28;
         float roleModifier = GetRoleModifier(player, context);
-        return Mathf.Max(1, Mathf.RoundToInt(unitWeight * (PlayerFatigueService.GetEffectiveOverall(player) + positionBonus) * roleModifier));
+        float chemistryModifier = GetPowerPlayChemistryStatsModifier(team, player);
+        return Mathf.Max(1, Mathf.RoundToInt(unitWeight * (PlayerFatigueService.GetEffectiveOverall(player) + positionBonus) * roleModifier * chemistryModifier));
+    }
+
+    private static float GetLineChemistryStatsModifier(TeamData team, PlayerData player)
+    {
+        if (team == null || player == null)
+        {
+            return 1f;
+        }
+
+        if (team.Chemistry == null)
+        {
+            ChemistryService.EnsureChemistryForTeam(team);
+        }
+
+        TeamChemistryData chemistry = team.Chemistry;
+        if (chemistry == null)
+        {
+            return 1f;
+        }
+
+        chemistry.EnsureCollections();
+        foreach (LineChemistryData unit in chemistry.ForwardLines)
+        {
+            if (ContainsPlayer(unit, player.Id))
+            {
+                return GetChemistryStatsModifier(unit.ChemistryScore);
+            }
+        }
+
+        foreach (LineChemistryData unit in chemistry.DefensePairs)
+        {
+            if (ContainsPlayer(unit, player.Id))
+            {
+                return GetChemistryStatsModifier(unit.ChemistryScore);
+            }
+        }
+
+        return 1f;
+    }
+
+    private static float GetPowerPlayChemistryStatsModifier(TeamData team, PlayerData player)
+    {
+        if (team == null || player == null)
+        {
+            return 1f;
+        }
+
+        if (team.Chemistry == null)
+        {
+            ChemistryService.EnsureChemistryForTeam(team);
+        }
+
+        TeamChemistryData chemistry = team.Chemistry;
+        if (chemistry == null)
+        {
+            return 1f;
+        }
+
+        chemistry.EnsureCollections();
+        foreach (LineChemistryData unit in chemistry.PowerPlayUnits)
+        {
+            if (ContainsPlayer(unit, player.Id))
+            {
+                return GetChemistryStatsModifier(unit.ChemistryScore);
+            }
+        }
+
+        return GetLineChemistryStatsModifier(team, player);
+    }
+
+    private static float GetChemistryStatsModifier(int score)
+    {
+        string label = ChemistryConfig.GetChemistryLabel(score);
+        if (label == ChemistryConfig.LabelExcellent)
+        {
+            return 1.05f;
+        }
+
+        if (label == ChemistryConfig.LabelGood)
+        {
+            return 1.02f;
+        }
+
+        if (label == ChemistryConfig.LabelPoor)
+        {
+            return 0.97f;
+        }
+
+        return label == ChemistryConfig.LabelBad ? 0.94f : 1f;
+    }
+
+    private static bool ContainsPlayer(LineChemistryData unit, string playerId)
+    {
+        return unit != null
+            && unit.PlayerIds != null
+            && !string.IsNullOrEmpty(playerId)
+            && unit.PlayerIds.Contains(playerId);
     }
 
     private static int GetStatTimeOnIce(PlayerData player, bool isGoalie)
@@ -450,7 +567,10 @@ public static class PlayerGameStatsGenerator
 
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Position != "G" && InjuryService.IsPlayerAvailable(player))
+            if (player != null
+                && RosterStatusConfig.IsNhlRoster(player)
+                && player.Position != "G"
+                && InjuryService.IsPlayerAvailable(player))
             {
                 skaters.Add(player);
             }
@@ -467,7 +587,7 @@ public static class PlayerGameStatsGenerator
 
     private static bool IsExcluded(PlayerData player, List<string> excludedPlayerIds)
     {
-        if (player == null || !InjuryService.IsPlayerAvailable(player))
+        if (player == null || !RosterStatusConfig.IsNhlRoster(player) || !InjuryService.IsPlayerAvailable(player))
         {
             return true;
         }
@@ -504,6 +624,7 @@ public static class PlayerGameStatsGenerator
 
         PlayerFatigueService.EnsureFatigueForTeam(team);
         InjuryService.EnsureInjuryFieldsForTeam(team);
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
     }
 
     private static List<PlayerData> FilterAvailablePlayers(List<PlayerData> players)
@@ -516,12 +637,55 @@ public static class PlayerGameStatsGenerator
 
         foreach (PlayerData player in players)
         {
-            if (InjuryService.IsPlayerAvailable(player))
+            if (RosterStatusConfig.IsNhlRoster(player) && InjuryService.IsPlayerAvailable(player))
             {
                 availablePlayers.Add(player);
             }
         }
 
         return availablePlayers;
+    }
+
+    private static void IncrementNhlGamesPlayed(TeamData team, List<PlayerGameStatData> gameStats)
+    {
+        if (team == null || gameStats == null)
+        {
+            return;
+        }
+
+        HashSet<string> countedPlayerIds = new HashSet<string>();
+        foreach (PlayerGameStatData stat in gameStats)
+        {
+            if (stat == null || stat.TeamId != team.Id || string.IsNullOrEmpty(stat.PlayerId) || countedPlayerIds.Contains(stat.PlayerId))
+            {
+                continue;
+            }
+
+            PlayerData player = FindPlayer(team, stat.PlayerId);
+            if (RosterStatusConfig.IsNhlRoster(player))
+            {
+                player.NHLGamesThisSeason++;
+                countedPlayerIds.Add(stat.PlayerId);
+            }
+        }
+    }
+
+    private static PlayerData FindPlayer(TeamData team, string playerId)
+    {
+        if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return null;
+        }
+
+        team.EnsurePlayers();
+        foreach (PlayerData player in team.Players)
+        {
+            if (player != null && player.Id == playerId)
+            {
+                return player;
+            }
+        }
+
+        return null;
     }
 }

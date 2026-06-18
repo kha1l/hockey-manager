@@ -55,16 +55,24 @@ public class InjuriesController : MonoBehaviour
         }
         else
         {
-            foreach (PlayerData player in injuredPlayers)
+            int shown = UiDisplayLimitConfig.ClampRowCount(injuredPlayers.Count, UiDisplayLimitConfig.MaxInjuryRows);
+            for (int i = 0; i < shown; i++)
             {
+                PlayerData player = injuredPlayers[i];
                 InjuryRowView row = Instantiate(_activeInjuryRowPrefab, _activeInjuriesContainer);
                 row.name = player.Id + "-injury-row";
                 row.gameObject.SetActive(true);
                 row.Initialize(player, team);
             }
+
+            string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, injuredPlayers.Count);
+            if (!string.IsNullOrEmpty(limitMessage))
+            {
+                AddEmptyRow(_activeInjuriesContainer, _activeInjuryRowPrefab, limitMessage);
+            }
         }
 
-        List<InjuryRecordData> history = GetRecentHistory(state, team.Id, 30);
+        List<InjuryRecordData> history = GetRecentHistory(state, team.Id, UiDisplayLimitConfig.MaxInjuryRows);
         if (history.Count == 0)
         {
             AddEmptyRow(_historyContainer, _historyRowPrefab, "История травм пока пуста");
@@ -90,7 +98,7 @@ public class InjuriesController : MonoBehaviour
 
     private static string BuildSummaryText(TeamData team, List<PlayerData> injuredPlayers)
     {
-        string teamName = team.City + " " + team.Name;
+        string teamName = TeamIdentityService.GetDisplayName(team);
         int injuredCount = injuredPlayers == null ? 0 : injuredPlayers.Count;
         string lineupMessage;
         bool hasInjuredActivePlayers = LineupService.HasInjuredActivePlayers(team, out lineupMessage);

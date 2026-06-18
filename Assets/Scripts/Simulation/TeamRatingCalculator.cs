@@ -12,9 +12,10 @@ public static class TeamRatingCalculator
 
         int totalOverall = 0;
         int playerCount = 0;
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         foreach (PlayerData player in team.Players)
         {
-            if (IsAvailable(player))
+            if (RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired && IsAvailable(player))
             {
                 totalOverall += player.Overall;
                 playerCount++;
@@ -42,6 +43,7 @@ public static class TeamRatingCalculator
         int defense = CalculateDefenseRating(team);
         int goalie = CalculateGoalieRating(team);
         int total = Mathf.RoundToInt((offense * 0.45f) + (defense * 0.30f) + (goalie * 0.25f));
+        total += CoachingStaffService.GetTeamRatingModifier(team);
         return Mathf.Clamp(total, 50, 99);
     }
 
@@ -60,7 +62,7 @@ public static class TeamRatingCalculator
             total += AveragePlayers(GetForwardLinePlayers(team, line)) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + CoachingStaffService.GetOffenseModifier(team), 50, 99);
     }
 
     public static int CalculateDefenseRating(TeamData team)
@@ -78,7 +80,7 @@ public static class TeamRatingCalculator
             total += AveragePlayers(GetDefensePairPlayers(team, pair)) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + CoachingStaffService.GetDefenseModifier(team), 50, 99);
     }
 
     public static int CalculateGoalieRating(TeamData team)
@@ -105,7 +107,8 @@ public static class TeamRatingCalculator
         int backupOverall = IsAvailable(backup) ? backup.Overall : starter.Overall;
         float total = (starter.Overall * LineupConfig.StarterGoalieWeight)
             + (backupOverall * LineupConfig.BackupGoalieWeight);
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        int goalieModifier = Mathf.Clamp(CoachingStaffService.GetGoalieDevelopmentModifier(team, starter), -1, 1);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + goalieModifier, 50, 99);
     }
 
     public static int CalculatePowerPlayRating(TeamData team)
@@ -132,7 +135,7 @@ public static class TeamRatingCalculator
         modifier += (team.Tactics.DefensiveFocus - 50) * 0.0006f;
         modifier -= Mathf.Abs(team.Tactics.RiskLevel - 50) * 0.00025f;
 
-        return Mathf.Clamp(Mathf.RoundToInt(baseRating * modifier), 50, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(baseRating * modifier) + CoachingStaffService.GetTacticalFitModifier(team), 50, 99);
     }
 
     public static int CalculateEffectiveLineupOverall(TeamData team)
@@ -141,14 +144,16 @@ public static class TeamRatingCalculator
         PlayerFatigueService.EnsureFatigueForTeam(team);
         if (team == null || team.Lineup == null || !team.Lineup.IsValid)
         {
-            return CalculateLineupOverall(team);
+            return ClampFinalRating(CalculateLineupOverall(team) + ChemistryService.GetTeamChemistryRatingModifier(team));
         }
 
         int offense = CalculateEffectiveOffenseRating(team);
         int defense = CalculateEffectiveDefenseRating(team);
         int goalie = CalculateEffectiveGoalieRating(team);
         int total = Mathf.RoundToInt((offense * 0.45f) + (defense * 0.30f) + (goalie * 0.25f));
-        return Mathf.Clamp(total, 50, 99);
+        total += ChemistryService.GetTeamChemistryRatingModifier(team);
+        total += CoachingStaffService.GetTeamRatingModifier(team);
+        return ClampFinalRating(total);
     }
 
     public static int CalculateEffectiveOffenseRating(TeamData team)
@@ -167,7 +172,7 @@ public static class TeamRatingCalculator
             total += AverageEffectivePlayers(GetForwardLinePlayers(team, line)) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + CoachingStaffService.GetOffenseModifier(team), 50, 99);
     }
 
     public static int CalculateEffectiveDefenseRating(TeamData team)
@@ -186,7 +191,7 @@ public static class TeamRatingCalculator
             total += AverageEffectivePlayers(GetDefensePairPlayers(team, pair)) * weight;
         }
 
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + CoachingStaffService.GetDefenseModifier(team), 50, 99);
     }
 
     public static int CalculateEffectiveGoalieRating(TeamData team)
@@ -215,7 +220,8 @@ public static class TeamRatingCalculator
         int backupOverall = IsAvailable(backup) ? PlayerFatigueService.GetEffectiveOverall(backup) : starterOverall;
         float total = (starterOverall * LineupConfig.StarterGoalieWeight)
             + (backupOverall * LineupConfig.BackupGoalieWeight);
-        return Mathf.Clamp(Mathf.RoundToInt(total), 50, 99);
+        int goalieModifier = Mathf.Clamp(CoachingStaffService.GetGoalieDevelopmentModifier(team, starter), -1, 1);
+        return Mathf.Clamp(Mathf.RoundToInt(total) + goalieModifier, 50, 99);
     }
 
     private static float AveragePlayers(List<PlayerData> players)
@@ -237,6 +243,11 @@ public static class TeamRatingCalculator
         }
 
         return count == 0 ? 70f : (float)total / count;
+    }
+
+    private static int ClampFinalRating(int rating)
+    {
+        return Mathf.Clamp(rating, 40, 99);
     }
 
     private static float AverageEffectivePlayers(List<PlayerData> players)
@@ -289,7 +300,7 @@ public static class TeamRatingCalculator
 
     private static void AddPlayer(List<PlayerData> players, PlayerData player)
     {
-        if (player != null)
+        if (player != null && !player.IsRetired)
         {
             players.Add(player);
         }
@@ -297,7 +308,7 @@ public static class TeamRatingCalculator
 
     private static bool IsAvailable(PlayerData player)
     {
-        return InjuryService.IsPlayerAvailable(player);
+        return RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired && InjuryService.IsPlayerAvailable(player);
     }
 
     private static PlayerData FindBestAvailableGoalie(TeamData team)
@@ -315,7 +326,12 @@ public static class TeamRatingCalculator
         PlayerData bestGoalie = null;
         foreach (PlayerData player in team.Players)
         {
-            if (player == null || player.Position != "G" || player.Id == excludedPlayerId || !IsAvailable(player))
+            if (player == null
+                || !RosterStatusConfig.IsNhlRoster(player)
+                || player.IsRetired
+                || player.Position != "G"
+                || player.Id == excludedPlayerId
+                || !IsAvailable(player))
             {
                 continue;
             }
@@ -339,7 +355,7 @@ public static class TeamRatingCalculator
         team.EnsurePlayers();
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Id == playerId)
+            if (player != null && !player.IsRetired && player.Id == playerId)
             {
                 return player;
             }

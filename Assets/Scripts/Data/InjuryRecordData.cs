@@ -18,4 +18,10 @@ public class InjuryRecordData
     public string ExpectedReturnDate;
     public string Status;
     public string Source;
+    public string OriginalRosterStatus;
+    public string OriginalSlotType;
+    public int OriginalLineOrPairNumber;
+    public string OriginalSlotPosition;
+    public string ReplacementPlayerId;
+    public string ReplacementPlayerName;
 }

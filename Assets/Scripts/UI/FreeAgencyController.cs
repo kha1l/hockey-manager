@@ -11,7 +11,7 @@ public class FreeAgencyController : MonoBehaviour
     [SerializeField] private Transform _freeAgentsContainer;
     [SerializeField] private Transform _historyContainer;
     [SerializeField] private FreeAgentRowView _freeAgentRowPrefab;
-    [SerializeField] private FreeAgentSigningHistoryRowView _historyRowPrefab;
+    [SerializeField] private FreeAgentOfferRowView _historyRowPrefab;
     [SerializeField] private GameScreenController _screenController;
 
     public void Configure(
@@ -21,7 +21,7 @@ public class FreeAgencyController : MonoBehaviour
         Transform freeAgentsContainer,
         Transform historyContainer,
         FreeAgentRowView freeAgentRowPrefab,
-        FreeAgentSigningHistoryRowView historyRowPrefab,
+        FreeAgentOfferRowView historyRowPrefab,
         GameScreenController screenController)
     {
         _statusText = statusText;
@@ -34,7 +34,7 @@ public class FreeAgencyController : MonoBehaviour
         _screenController = screenController;
     }
 
-    public void ShowFreeAgency(GameState state, string selectedFreeAgentId)
+    public void ShowFreeAgency(GameState state, string selectedFreeAgentId, int offerSalary, int offerYears)
     {
         if (!HasRequiredReferences())
         {
@@ -43,9 +43,10 @@ public class FreeAgencyController : MonoBehaviour
         }
 
         FreeAgentService.EnsureFreeAgentData(state);
+        BetterFreeAgencyService.EnsureFreeAgentEvaluations(state);
         RenderStatus(state);
         RenderFinance(state);
-        RenderSelectedFreeAgent(state, selectedFreeAgentId);
+        RenderSelectedFreeAgent(state, selectedFreeAgentId, offerSalary, offerYears);
         RenderFreeAgents(state);
         RenderHistory(state);
     }
@@ -63,10 +64,12 @@ public class FreeAgencyController : MonoBehaviour
             ? "Рынок свободных агентов открыт"
             : "Рынок откроется после завершения драфта";
 
+        FreeAgencyMarketSummaryData summary = BetterFreeAgencyService.BuildMarketSummary(state);
         _statusText.text = "Фаза сезона: " + phase
             + "\nFreeAgencyStartDate: " + freeAgencyStartDate
             + "\nCalendarStatus: " + calendarStatus
-            + "\n" + marketStatus;
+            + "\n" + marketStatus
+            + "\n" + (summary == null ? "" : summary.Summary);
     }
 
     private void RenderFinance(GameState state)
@@ -80,22 +83,37 @@ public class FreeAgencyController : MonoBehaviour
 
         team.EnsurePlayers();
         TeamFinanceData finance = SalaryCapService.CalculateTeamFinance(team);
+        ClubFinanceData clubFinances = ClubFinanceService.CalculateClubFinances(state, team);
         _financeText.text = "Salary cap: " + FormatMoney(finance.SalaryCapUpperLimit)
             + "\nPayroll: " + FormatMoney(finance.Payroll)
             + "\nCap space: " + FormatMoney(finance.CapSpace)
+            + "\nBudget: " + FormatMoney(clubFinances.Budget)
+            + " | Health: " + clubFinances.FinancialHealthLabel
             + "\nRoster size: " + finance.PlayerCount + " / " + SalaryCapConfig.MaxRosterSize;
     }
 
-    private void RenderSelectedFreeAgent(GameState state, string selectedFreeAgentId)
+    private void RenderSelectedFreeAgent(GameState state, string selectedFreeAgentId, int offerSalary, int offerYears)
     {
-        PlayerData selectedPlayer = FreeAgentService.FindFreeAgent(state, selectedFreeAgentId);
-        _selectedFreeAgentText.text = selectedPlayer == null
-            ? "Выбранный свободный агент: не выбран"
-            : "Выбранный свободный агент: " + selectedPlayer.FirstName + " " + selectedPlayer.LastName
-                + " | " + selectedPlayer.Position
-                + " | OVR " + selectedPlayer.Overall
-                + " | $" + FormatMoney(selectedPlayer.Salary)
-                + " | " + selectedPlayer.ContractYearsRemaining + " г.";
+        PlayerData selectedPlayer = BetterFreeAgencyService.FindFreeAgent(state, selectedFreeAgentId);
+        if (selectedPlayer == null)
+        {
+            _selectedFreeAgentText.text = "Выбранный свободный агент: не выбран";
+            return;
+        }
+
+        int displayedSalary = offerSalary > 0 ? offerSalary : selectedPlayer.FreeAgencyExpectedSalary;
+        int displayedYears = offerYears > 0 ? offerYears : selectedPlayer.FreeAgencyExpectedYears;
+        _selectedFreeAgentText.text = "Выбранный свободный агент: " + selectedPlayer.FirstName + " " + selectedPlayer.LastName
+            + " | " + selectedPlayer.Position
+            + " | OVR " + selectedPlayer.Overall
+            + " | POT " + selectedPlayer.Potential
+            + "\n" + selectedPlayer.FreeAgencyAskSummary
+            + " | Interest " + selectedPlayer.FreeAgencyInterestInUserTeam
+            + " (" + BetterFreeAgencyConfig.GetInterestLabel(selectedPlayer.FreeAgencyInterestInUserTeam) + ")"
+            + "\nBest fit: " + selectedPlayer.FreeAgencyBestFitTeamName
+            + " / " + selectedPlayer.FreeAgencyBestFitRole
+            + " | Last offer: " + (string.IsNullOrEmpty(selectedPlayer.LastFreeAgencyOfferStatus) ? "None" : selectedPlayer.LastFreeAgencyOfferStatus)
+            + "\nТекущий оффер: $" + FormatMoney(displayedSalary) + " x " + displayedYears + " лет";
     }
 
     private void RenderFreeAgents(GameState state)
@@ -103,19 +121,27 @@ public class FreeAgencyController : MonoBehaviour
         ClearRows(_freeAgentsContainer, _freeAgentRowPrefab.transform);
         _freeAgentRowPrefab.gameObject.SetActive(false);
 
-        List<PlayerData> freeAgents = FreeAgentService.GetAvailableFreeAgents(state);
+        List<PlayerData> freeAgents = BetterFreeAgencyService.GetFreeAgents(state);
         if (freeAgents.Count == 0)
         {
-            CreateInfoRow(_freeAgentsContainer, "Свободных агентов нет");
+            CreateInfoRow(_freeAgentsContainer, "Свободные агенты появятся в offseason или после истечения контрактов.");
             return;
         }
 
-        foreach (PlayerData player in freeAgents)
+        int shown = UiDisplayLimitConfig.ClampRowCount(freeAgents.Count, UiDisplayLimitConfig.MaxFreeAgentRows);
+        for (int i = 0; i < shown; i++)
         {
+            PlayerData player = freeAgents[i];
             FreeAgentRowView row = Instantiate(_freeAgentRowPrefab, _freeAgentsContainer);
             row.name = player.Id + "-free-agent-row";
             row.gameObject.SetActive(true);
             row.Initialize(player, _screenController);
+        }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, freeAgents.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_freeAgentsContainer, limitMessage);
         }
     }
 
@@ -124,19 +150,22 @@ public class FreeAgencyController : MonoBehaviour
         ClearRows(_historyContainer, _historyRowPrefab.transform);
         _historyRowPrefab.gameObject.SetActive(false);
 
-        if (state == null || state.FreeAgentHistory == null || state.FreeAgentHistory.Signings == null || state.FreeAgentHistory.Signings.Count == 0)
+        if (state == null
+            || state.FreeAgencyOfferHistory == null
+            || state.FreeAgencyOfferHistory.Offers == null
+            || state.FreeAgencyOfferHistory.Offers.Count == 0)
         {
-            CreateInfoRow(_historyContainer, "История подписаний пуста");
+            CreateInfoRow(_historyContainer, "История офферов пуста");
             return;
         }
 
-        int firstIndex = Mathf.Max(0, state.FreeAgentHistory.Signings.Count - 10);
-        for (int i = state.FreeAgentHistory.Signings.Count - 1; i >= firstIndex; i--)
+        int firstIndex = Mathf.Max(0, state.FreeAgencyOfferHistory.Offers.Count - 10);
+        for (int i = state.FreeAgencyOfferHistory.Offers.Count - 1; i >= firstIndex; i--)
         {
-            FreeAgentSigningHistoryRowView row = Instantiate(_historyRowPrefab, _historyContainer);
-            row.name = "free-agent-signing-" + i;
+            FreeAgentOfferRowView row = Instantiate(_historyRowPrefab, _historyContainer);
+            row.name = "free-agent-offer-" + i;
             row.gameObject.SetActive(true);
-            row.Initialize(state.FreeAgentHistory.Signings[i]);
+            row.Initialize(state.FreeAgencyOfferHistory.Offers[i]);
         }
     }
 

@@ -32,6 +32,30 @@ public class SeasonHistoryRowView : MonoBehaviour
             + " | Плей-офф: " + madePlayoffsText;
     }
 
+    public void Initialize(LeagueSeasonHistoryData history)
+    {
+        if (_infoText == null)
+        {
+            return;
+        }
+
+        if (history == null)
+        {
+            _infoText.text = "История сезона недоступна";
+            return;
+        }
+
+        _infoText.text = FormatSeason(history.SeasonStartYear, history.SeasonEndYear)
+            + " | Champion: " + SafeText(history.ChampionTeamName)
+            + " | Finalist: " + SafeText(history.FinalistTeamName)
+            + " | Best RS: " + SafeText(history.BestRegularSeasonTeamName)
+            + " (" + history.BestRegularSeasonPoints + " pts)"
+            + " | Top scorer: " + SafeText(history.TopScorerPlayerName)
+            + " " + history.TopScorerPoints + "P"
+            + " | MVP: " + SafeText(history.MvpPlayerName)
+            + " | User: " + SafeText(history.UserTeamResult);
+    }
+
     private static string FormatSeason(int startYear, int endYear)
     {
         return startYear + "-" + (endYear % 100).ToString("D2");

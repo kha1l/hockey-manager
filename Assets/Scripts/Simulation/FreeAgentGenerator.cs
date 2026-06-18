@@ -60,6 +60,7 @@ public static class FreeAgentGenerator
             };
 
             ContractGenerator.AssignContract(player);
+            PlayerDevelopmentService.EnsureDevelopmentProfile(player);
             PlayerFatigueService.EnsureFatigueFields(player);
             InjuryService.EnsureInjuryFields(player);
             player.Salary = Clamp(player.Salary, SalaryCapConfig.LeagueMinimumSalary, SalaryCapConfig.MaximumPlayerSalary);

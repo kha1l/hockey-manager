@@ -41,15 +41,19 @@ public class ContractsController : MonoBehaviour
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         if (team.Players.Count == 0)
         {
             team.Players = PlayerSeedData.CreatePlayersForTeam(team.Id);
         }
 
         ContractGenerator.EnsureContractsForTeam(team);
+        GameSession.EnsureContractExtensions();
         InjuryService.EnsureInjuryFieldsForTeam(team);
         TeamFinanceData finance = SalaryCapService.CalculateTeamFinance(team);
-        _financeText.text = BuildFinanceText(finance);
+        ClubFinanceData clubFinances = GameSession.GetCurrentTeamClubFinances();
+        ContractExtensionSummaryData extensionSummary = GameSession.GetCurrentTeamExtensionSummary();
+        _financeText.text = BuildFinanceText(finance, extensionSummary, clubFinances);
 
         foreach (PlayerData player in team.Players)
         {
@@ -67,6 +71,7 @@ public class ContractsController : MonoBehaviour
         bool extended = ContractService.TryExtendContract(GameSession.CurrentTeam, playerId, out string message);
         if (extended && GameSession.CurrentState != null)
         {
+            GameSession.EnsureContractExtensions();
             SaveLoadService.Save(GameSession.CurrentState);
         }
 
@@ -80,7 +85,7 @@ public class ContractsController : MonoBehaviour
         Debug.Log(message);
     }
 
-    private string BuildFinanceText(TeamFinanceData finance)
+    private string BuildFinanceText(TeamFinanceData finance, ContractExtensionSummaryData extensionSummary, ClubFinanceData clubFinances)
     {
         string text =
             "TeamName: " + finance.TeamName + "\n"
@@ -91,10 +96,17 @@ public class ContractsController : MonoBehaviour
             + "MaximumPlayerSalary: " + FormatMoney(SalaryCapConfig.MaximumPlayerSalary) + "\n"
             + "Payroll: " + FormatMoney(finance.Payroll) + "\n"
             + "CapSpace: " + FormatMoney(finance.CapSpace) + "\n"
+            + "Budget: " + FormatMoney(clubFinances == null ? 0 : clubFinances.Budget) + "\n"
+            + "FinancialHealth: " + (clubFinances == null ? "нет данных" : clubFinances.FinancialHealthLabel) + "\n"
             + "FloorSpace: " + FormatMoney(finance.FloorSpace) + "\n"
             + "IsOverCap: " + finance.IsOverCap + "\n"
             + "IsBelowFloor: " + finance.IsBelowFloor + "\n"
-            + "PlayerCount: " + finance.PlayerCount;
+            + "PlayerCount: " + finance.PlayerCount
+            + "\nИстекающие контракты: " + (extensionSummary == null ? 0 : extensionSummary.EligiblePlayers)
+            + " | UFA: " + (extensionSummary == null ? 0 : extensionSummary.PendingUfaCount)
+            + " | RFA: " + (extensionSummary == null ? 0 : extensionSummary.PendingRfaCount)
+            + " | ELC: " + (extensionSummary == null ? 0 : extensionSummary.ElcExpiringCount)
+            + "\nНизкий интерес к продлению: " + (extensionSummary == null ? 0 : extensionSummary.LowInterestCount);
 
         if (finance.IsOverCap)
         {

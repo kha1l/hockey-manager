@@ -21,7 +21,7 @@ public class TradeTeamRowView : MonoBehaviour
         _teamId = team.Id;
         _screenController = screenController;
         TeamFinanceData finance = SalaryCapService.CalculateTeamFinance(team);
-        _infoText.text = team.City + " " + team.Name
+        _infoText.text = TeamIdentityService.GetDisplayName(team)
             + " (" + team.Abbreviation + ")"
             + " | Payroll $" + FormatMoney(finance.Payroll)
             + " | Cap $" + FormatMoney(finance.CapSpace);

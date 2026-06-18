@@ -1,4 +1,3 @@
-using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,19 +17,21 @@ public class ContractRowView : MonoBehaviour
 
     public void Initialize(PlayerData player, ContractsController controller)
     {
+        if (player == null)
+        {
+            _playerId = "";
+            _controller = controller;
+            if (_infoText != null)
+            {
+                _infoText.text = "Контракт недоступен";
+            }
+
+            return;
+        }
+
         _playerId = player.Id;
         _controller = controller;
-        InjuryService.EnsureInjuryFields(player);
-        string contractLabel = player.ContractStatus
-            + (player.IsEntryLevelContract ? " | ELC" : "")
-            + (player.IsInjured ? " | INJ " + player.InjuryDaysRemaining + " дн." : "");
-        _infoText.text = player.FirstName + " " + player.LastName
-            + " | " + player.Position
-            + " | " + player.Age
-            + " лет | OVR " + player.Overall + " " + FormatDevelopment(player.LastDevelopmentDelta)
-            + " | $" + FormatMoney(player.Salary)
-            + " | " + player.ContractYearsRemaining + " г."
-            + " | " + contractLabel;
+        _infoText.text = PlayerDisplayFormatter.FormatPlayerWithContract(player);
 
         _extendButton.onClick.RemoveAllListeners();
         _extendButton.onClick.AddListener(OnExtendClicked);
@@ -44,23 +45,4 @@ public class ContractRowView : MonoBehaviour
         }
     }
 
-    private static string FormatMoney(int value)
-    {
-        return value.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
-    }
-
-    private static string FormatDevelopment(int value)
-    {
-        if (value > 0)
-        {
-            return "DEV +" + value;
-        }
-
-        if (value < 0)
-        {
-            return "DEV " + value;
-        }
-
-        return "DEV 0";
-    }
 }

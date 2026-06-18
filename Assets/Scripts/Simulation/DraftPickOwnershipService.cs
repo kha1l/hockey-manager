@@ -180,6 +180,6 @@ public static class DraftPickOwnershipService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

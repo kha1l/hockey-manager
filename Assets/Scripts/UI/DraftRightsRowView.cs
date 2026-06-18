@@ -18,11 +18,20 @@ public class DraftRightsRowView : MonoBehaviour
             return;
         }
 
+        int rank = ScoutingService.GetProspectRank(prospect, prospect.DraftPickOverall);
+        ScoutingService.EnsureProspectScouting(prospect, rank);
         _infoText.text = prospect.FirstName + " " + prospect.LastName
+            + " | #" + rank
+            + " | " + prospect.ProjectedRound
+            + " | " + prospect.ProspectArchetype
             + " | " + prospect.Position
             + " | " + prospect.Age
             + " | OVR " + prospect.Overall
             + " | POT " + prospect.Potential
+            + " | " + prospect.RiskHint
+            + " | " + prospect.DevelopmentTypeHint
+            + " | " + prospect.CeilingHint
+            + " | " + prospect.FloorHint
             + " | R" + prospect.DraftRound
             + " | #" + prospect.DraftPickOverall;
     }

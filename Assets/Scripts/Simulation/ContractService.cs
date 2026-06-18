@@ -2,6 +2,33 @@ using System.Collections.Generic;
 
 public static class ContractService
 {
+    // Future: morale should affect extension willingness and free agency decisions.
+    public static int GetMoraleContractModifier(PlayerData player)
+    {
+        if (player == null)
+        {
+            return 0;
+        }
+
+        MoraleService.InitializePlayerMorale(player);
+        if (player.WantsTrade)
+        {
+            return -40;
+        }
+
+        if (player.Morale >= 80)
+        {
+            return 10;
+        }
+
+        if (player.Morale >= 60)
+        {
+            return 0;
+        }
+
+        return player.Morale >= 40 ? -10 : -25;
+    }
+
     public static bool TryExtendContract(TeamData team, string playerId, out string message)
     {
         PlayerData player = FindPlayer(team, playerId);
@@ -11,6 +38,13 @@ public static class ContractService
             return false;
         }
 
+        if (player.IsRetired)
+        {
+            message = "Игрок завершил карьеру";
+            return false;
+        }
+
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         ContractGenerator.NormalizeContract(player);
 
         if (player.ContractYearsRemaining >= SalaryCapConfig.MaxContractYearsWithOwnTeam)
@@ -31,8 +65,10 @@ public static class ContractService
             newSalary = SalaryCapConfig.MaximumPlayerSalary;
         }
 
-        int payrollWithoutCurrentSalary = SalaryCapService.CalculatePayroll(team) - currentSalary;
-        if (payrollWithoutCurrentSalary + newSalary > SalaryCapConfig.SalaryCapUpperLimit)
+        int payrollWithoutCurrentSalary = RosterStatusConfig.IsNhlRoster(player)
+            ? SalaryCapService.CalculatePayroll(team) - currentSalary
+            : SalaryCapService.CalculatePayroll(team);
+        if (RosterStatusConfig.IsNhlRoster(player) && payrollWithoutCurrentSalary + newSalary > SalaryCapConfig.SalaryCapUpperLimit)
         {
             message = "Недостаточно места под потолком зарплат";
             return false;
@@ -43,6 +79,46 @@ public static class ContractService
         player.ContractStatus = "Signed";
         player.IsGeneratedContract = true;
 
+        message = "Контракт продлён";
+        return true;
+    }
+
+    public static bool ApplyContractExtension(PlayerData player, int salary, int years, out string message)
+    {
+        if (player == null)
+        {
+            message = "Игрок не найден";
+            return false;
+        }
+
+        if (player.IsRetired)
+        {
+            message = "Игрок завершил карьеру";
+            return false;
+        }
+
+        if (salary < SalaryCapConfig.LeagueMinimumSalary)
+        {
+            message = "Зарплата ниже минимума лиги";
+            return false;
+        }
+
+        if (salary > SalaryCapConfig.MaximumPlayerSalary)
+        {
+            message = "Зарплата превышает максимум игрока";
+            return false;
+        }
+
+        if (years < 1 || years > SalaryCapConfig.MaxContractYearsWithOwnTeam)
+        {
+            message = "Некорректный срок контракта";
+            return false;
+        }
+
+        player.Salary = salary;
+        player.ContractYearsRemaining = years;
+        player.ContractStatus = "Signed";
+        player.IsGeneratedContract = true;
         message = "Контракт продлён";
         return true;
     }
@@ -65,14 +141,17 @@ public static class ContractService
 
             foreach (PlayerData player in team.Players)
             {
-                AdvanceContractYear(player);
+                if (player != null && !player.IsRetired)
+                {
+                    AdvanceContractYear(player);
+                }
             }
         }
     }
 
     private static void AdvanceContractYear(PlayerData player)
     {
-        if (player == null)
+        if (player == null || player.IsRetired)
         {
             return;
         }
@@ -106,7 +185,7 @@ public static class ContractService
 
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && player.Id == playerId)
+            if (player != null && !player.IsRetired && player.Id == playerId)
             {
                 return player;
             }

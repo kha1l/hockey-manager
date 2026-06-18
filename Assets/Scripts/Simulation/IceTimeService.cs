@@ -11,6 +11,7 @@ public static class IceTimeService
             return;
         }
 
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         PlayerRoleService.EnsureRolesForTeam(team);
         LineupService.EnsureLineup(team);
         SpecialTeamsService.EnsureSpecialTeams(team);
@@ -40,6 +41,7 @@ public static class IceTimeService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         foreach (PlayerData player in team.Players)
         {
             if (player == null)
@@ -50,13 +52,14 @@ public static class IceTimeService
             PlayerRoleService.EnsureRole(player);
             PlayerFatigueService.EnsureFatigueFields(player);
             InjuryService.EnsureInjuryFields(player);
+            MoraleService.InitializePlayerMorale(player);
 
             usageList.Add(new PlayerUsageData
             {
                 PlayerId = player.Id,
                 PlayerName = player.FirstName + " " + player.LastName,
                 TeamId = team.Id,
-                TeamName = team.City + " " + team.Name,
+                TeamName = TeamIdentityService.GetDisplayName(team),
                 Position = player.Position,
                 PlayerRole = player.PlayerRole,
                 UsageCategory = player.UsageCategory,
@@ -64,6 +67,11 @@ public static class IceTimeService
                 EffectiveOverall = PlayerFatigueService.GetEffectiveOverall(player),
                 Condition = player.Condition,
                 Fatigue = player.Fatigue,
+                Morale = player.Morale,
+                RoleSatisfaction = player.RoleSatisfaction,
+                IceTimeSatisfaction = player.IceTimeSatisfaction,
+                MoraleStatus = player.MoraleStatus,
+                WantsTrade = player.WantsTrade,
                 IsInjured = player.IsInjured,
                 IsActive = LineupService.IsPlayerActive(team, player.Id),
                 IsOnPowerPlay = SpecialTeamsService.IsPlayerOnPowerPlay(team, player.Id),
@@ -80,7 +88,7 @@ public static class IceTimeService
         TeamUsageSummaryData summary = new TeamUsageSummaryData
         {
             TeamId = team == null ? "" : team.Id,
-            TeamName = team == null ? "" : team.City + " " + team.Name,
+            TeamName = TeamIdentityService.GetDisplayName(team),
             UpdatedAtUtc = DateTime.UtcNow.ToString("o")
         };
 
@@ -101,12 +109,12 @@ public static class IceTimeService
                 continue;
             }
 
-            if (LineupService.IsPlayerActive(team, player.Id))
+            if (RosterStatusConfig.IsNhlRoster(player) && LineupService.IsPlayerActive(team, player.Id))
             {
                 activeTotal += player.EstimatedTimeOnIceSeconds;
                 activeCount++;
             }
-            else
+            else if (RosterStatusConfig.IsNhlRoster(player))
             {
                 scratchCount++;
             }
@@ -139,7 +147,7 @@ public static class IceTimeService
         }
 
         InjuryService.EnsureInjuryFields(player);
-        if (player.IsInjured)
+        if (!RosterStatusConfig.IsNhlRoster(player) || player.IsInjured)
         {
             return 0;
         }
@@ -176,6 +184,21 @@ public static class IceTimeService
     public static string DetermineUsageCategory(TeamData team, PlayerData player)
     {
         if (team == null || player == null)
+        {
+            return "Scratch";
+        }
+
+        if (RosterStatusConfig.IsFarmRoster(player))
+        {
+            return "Farm";
+        }
+
+        if (RosterStatusConfig.IsReserve(player))
+        {
+            return "Reserve";
+        }
+
+        if (!RosterStatusConfig.IsNhlRoster(player))
         {
             return "Scratch";
         }
@@ -284,6 +307,7 @@ public static class IceTimeService
 
         EnsureUsageForTeam(team);
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         foreach (PlayerData player in team.Players)
         {
             if (player == null)
@@ -291,7 +315,9 @@ public static class IceTimeService
                 continue;
             }
 
-            if (LineupService.IsPlayerActive(team, player.Id) && player.EstimatedTimeOnIceSeconds > 0)
+            if (RosterStatusConfig.IsNhlRoster(player)
+                && LineupService.IsPlayerActive(team, player.Id)
+                && player.EstimatedTimeOnIceSeconds > 0)
             {
                 player.LastGameTimeOnIceSeconds = player.EstimatedTimeOnIceSeconds;
                 player.TotalTimeOnIceSeconds += player.EstimatedTimeOnIceSeconds;
@@ -309,7 +335,11 @@ public static class IceTimeService
 
     public static int GetUsageWeightForStats(TeamData team, PlayerData player)
     {
-        if (team == null || player == null || !InjuryService.IsPlayerAvailable(player))
+        if (team == null
+            || player == null
+            || !RosterStatusConfig.IsNhlRoster(player)
+            || !LineupService.IsPlayerActive(team, player.Id)
+            || !InjuryService.IsPlayerAvailable(player))
         {
             return 0;
         }
@@ -421,6 +451,12 @@ public static class IceTimeService
             return 0;
         }
 
+        PlayerData player = FindPlayer(team, playerId);
+        if (!RosterStatusConfig.IsNhlRoster(player) || !LineupService.IsPlayerActive(team, playerId))
+        {
+            return 0;
+        }
+
         team.SpecialTeams.EnsureCollections();
         foreach (PenaltyKillUnitData unit in team.SpecialTeams.PenaltyKillUnits)
         {
@@ -439,6 +475,25 @@ public static class IceTimeService
         }
 
         return 0;
+    }
+
+    private static PlayerData FindPlayer(TeamData team, string playerId)
+    {
+        if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return null;
+        }
+
+        team.EnsurePlayers();
+        foreach (PlayerData player in team.Players)
+        {
+            if (player != null && player.Id == playerId)
+            {
+                return player;
+            }
+        }
+
+        return null;
     }
 
     private static int CompareUsage(PlayerUsageData left, PlayerUsageData right)

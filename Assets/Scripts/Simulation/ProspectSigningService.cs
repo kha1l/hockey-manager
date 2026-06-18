@@ -28,6 +28,7 @@ public static class ProspectSigningService
         }
 
         team.EnsureDraftRights();
+        EnsureDraftRightsMetadata(state, team);
         foreach (ProspectData prospect in team.DraftRights)
         {
             if (prospect != null)
@@ -49,6 +50,7 @@ public static class ProspectSigningService
         }
 
         team.EnsureDraftRights();
+        EnsureDraftRightsMetadata(state, team);
         foreach (ProspectData prospect in team.DraftRights)
         {
             if (prospect != null && prospect.Id == prospectId)
@@ -92,6 +94,7 @@ public static class ProspectSigningService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         team.EnsureDraftRights();
 
         ProspectData prospect = FindProspectRights(state, team.Id, prospectId);
@@ -118,16 +121,21 @@ public static class ProspectSigningService
             return false;
         }
 
-        if (team.Players.Count >= state.LeagueRules.MaxRosterSize)
-        {
-            message = "Достигнут максимальный размер состава";
-            Reject(state, signing, message);
-            return false;
-        }
-
+        ProspectRiskService.EnsureRiskProfile(prospect, GetProspectRank(prospect));
         PlayerData player = ConvertProspectToPlayer(prospect, team, state.LeagueRules);
-        int payrollAfter = SalaryCapService.CalculatePayroll(team) + player.Salary;
-        if (payrollAfter > state.LeagueRules.SalaryCapUpperLimit)
+        bool willAssignToNhl = TeamRosterService.GetNhlPlayers(team).Count < state.LeagueRules.MaxRosterSize;
+        player.RosterStatus = willAssignToNhl ? RosterStatusConfig.NHL : RosterStatusConfig.Farm;
+        player.PreviousRosterStatus = RosterStatusConfig.DraftRights;
+        player.RosterStatusUpdatedAtUtc = DateTime.UtcNow.ToString("o");
+        player.IsOnWaivers = false;
+        player.WaiverStatus = WaiverConfig.WaiverStatusNone;
+        player.WaiverIntendedDestination = "";
+        LeadershipService.ClearPlayerCaptaincy(player);
+        LeadershipService.EnsurePlayerLeadershipProfile(player);
+        WaiverEligibilityService.EnsureWaiverEligibility(player);
+
+        int payrollAfter = SalaryCapService.CalculatePayroll(team) + (willAssignToNhl ? player.Salary : 0);
+        if (willAssignToNhl && payrollAfter > state.LeagueRules.SalaryCapUpperLimit)
         {
             message = "Недостаточно места под потолком зарплат";
             signing.Salary = player.Salary;
@@ -138,6 +146,7 @@ public static class ProspectSigningService
 
         team.Players.Add(player);
         team.DraftRights.Remove(prospect);
+        LineupService.SyncScratchPlayers(team);
 
         signing.Salary = player.Salary;
         signing.ContractYears = player.ContractYearsRemaining;
@@ -154,6 +163,7 @@ public static class ProspectSigningService
         TeamData team,
         LeagueRulesData rules)
     {
+        ProspectRiskService.EnsureRiskProfile(prospect, GetProspectRank(prospect));
         return new PlayerData
         {
             Id = "player-from-" + prospect.Id,
@@ -173,6 +183,14 @@ public static class ProspectSigningService
             SourceProspectId = prospect.Id,
             DraftRound = prospect.DraftRound,
             DraftPickOverall = prospect.DraftPickOverall,
+            HiddenCeiling = prospect.HiddenCeiling,
+            HiddenFloor = prospect.HiddenFloor,
+            DevelopmentRisk = prospect.DevelopmentRisk,
+            BoomChance = prospect.BoomChance,
+            BustChance = prospect.BustChance,
+            DevelopmentType = prospect.DevelopmentType,
+            DevelopmentTypeHint = prospect.DevelopmentTypeHint,
+            HasDevelopmentProfile = true,
             Condition = FatigueConfig.DefaultCondition,
             Fatigue = FatigueConfig.DefaultFatigue,
             ConsecutiveGamesPlayed = 0,
@@ -334,6 +352,104 @@ public static class ProspectSigningService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
+    }
+
+    private static void EnsureDraftRightsMetadata(GameState state, TeamData team)
+    {
+        if (team == null || team.DraftRights == null)
+        {
+            return;
+        }
+
+        DraftClassProfileData profile = state == null || state.Draft == null
+            ? null
+            : state.Draft.ClassProfile;
+        int draftYear = state != null && state.Draft != null && state.Draft.DraftYear > 0
+            ? state.Draft.DraftYear
+            : DraftPickOwnershipService.GetDraftYear(state);
+
+        if (profile == null)
+        {
+            profile = DraftClassProfileGenerator.CreateFallbackProfile(draftYear);
+        }
+
+        DraftClassProfileGenerator.ApplyProfileModifiers(profile);
+        for (int i = 0; i < team.DraftRights.Count; i++)
+        {
+            ProspectData prospect = team.DraftRights[i];
+            if (prospect == null)
+            {
+                continue;
+            }
+
+            int rank = GetProspectRank(prospect);
+            if (rank <= 0 || rank == 999)
+            {
+                rank = i + 1;
+            }
+
+            if (prospect.DraftRank <= 0)
+            {
+                prospect.DraftRank = rank;
+            }
+
+            if (prospect.ProjectedPick <= 0)
+            {
+                prospect.ProjectedPick = prospect.DraftRank;
+            }
+
+            if (string.IsNullOrEmpty(prospect.ProjectedRound))
+            {
+                prospect.ProjectedRound = DraftClassConfig.GetProjectedRoundByRank(prospect.DraftRank);
+            }
+
+            if (prospect.ProjectedRoundNumber <= 0)
+            {
+                prospect.ProjectedRoundNumber = DraftClassConfig.GetProjectedRoundNumberByRank(prospect.DraftRank);
+            }
+
+            if (string.IsNullOrEmpty(prospect.ProspectArchetype))
+            {
+                prospect.ProspectArchetype = ProspectArchetypeGenerator.DetermineArchetype(
+                    prospect.Position,
+                    prospect.DraftRank,
+                    profile,
+                    prospect.Id);
+            }
+
+            prospect.DraftClassStrengthType = profile.StrengthType;
+            prospect.DraftClassDepthType = profile.DepthType;
+            prospect.DraftClassPositionalTheme = profile.PositionalTheme;
+            if (prospect.ClassAdjustedOverall <= 0)
+            {
+                prospect.ClassAdjustedOverall = prospect.Overall;
+            }
+
+            if (prospect.ClassAdjustedPotential <= 0)
+            {
+                prospect.ClassAdjustedPotential = prospect.Potential;
+            }
+        }
+    }
+
+    private static int GetProspectRank(ProspectData prospect)
+    {
+        if (prospect == null)
+        {
+            return 999;
+        }
+
+        if (prospect.DraftRank > 0)
+        {
+            return prospect.DraftRank;
+        }
+
+        if (prospect.DraftPickOverall > 0)
+        {
+            return prospect.DraftPickOverall;
+        }
+
+        return prospect.ProjectedPick > 0 ? prospect.ProjectedPick : 999;
     }
 }

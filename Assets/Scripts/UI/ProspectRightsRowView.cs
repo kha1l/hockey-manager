@@ -21,12 +21,23 @@ public class ProspectRightsRowView : MonoBehaviour
         _screenController = screenController;
         int elcYears = EntryLevelContractConfig.GetContractYearsByAge(prospect.Age);
         string elcText = elcYears > 0 ? elcYears + " г. ELC" : "ELC недоступен";
+        int rank = ScoutingService.GetProspectRank(prospect, prospect.DraftPickOverall);
+        ScoutingService.EnsureProspectScouting(prospect, rank);
 
         _infoText.text = prospect.FirstName + " " + prospect.LastName
+            + " | #" + rank
+            + " | " + prospect.ProjectedRound
+            + " | " + prospect.ProspectArchetype
             + " | " + prospect.Position
             + " | " + prospect.Age
             + " | OVR " + prospect.Overall
             + " | POT " + prospect.Potential
+            + " | " + prospect.ScoutingGrade
+            + " | " + prospect.ProjectedRole
+            + " | " + prospect.RiskHint
+            + " | " + prospect.DevelopmentTypeHint
+            + " | " + prospect.CeilingHint
+            + " | " + prospect.FloorHint
             + " | " + FormatDevelopment(prospect.LastDevelopmentDelta)
             + " | R" + prospect.DraftRound
             + " | #" + prospect.DraftPickOverall

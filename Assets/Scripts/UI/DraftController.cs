@@ -51,6 +51,7 @@ public class DraftController : MonoBehaviour
         }
 
         DraftService.EnsureDraft(state);
+        ScoutingService.EnsureScouting(state);
         RenderStatus(state);
         RenderCurrentPick(state);
         RenderSelectedProspect(state, selectedProspectId);
@@ -96,6 +97,7 @@ public class DraftController : MonoBehaviour
             + "\nDraftYear: " + draftYear
             + " | DraftStatus: " + draftStatus
             + " | TotalRounds: " + DraftConfig.DraftRounds
+            + "\n" + DraftService.GetDraftClassSummary(state)
             + "\n" + availability;
     }
 
@@ -120,12 +122,27 @@ public class DraftController : MonoBehaviour
     private void RenderSelectedProspect(GameState state, string selectedProspectId)
     {
         ProspectData prospect = FindProspect(state, selectedProspectId);
+        if (prospect != null)
+        {
+            ScoutingService.EnsureProspectScouting(prospect, ScoutingService.GetProspectRank(prospect, prospect.ProjectedPick));
+        }
+
         _selectedProspectText.text = prospect == null
             ? "Выбранный проспект: не выбран"
             : "Выбранный проспект: " + prospect.FirstName + " " + prospect.LastName
+                + " | #" + ScoutingService.GetProspectRank(prospect, prospect.ProjectedPick)
+                + " | " + prospect.ProjectedRound
+                + " | " + prospect.ProspectArchetype
                 + " | " + prospect.Position
-                + " | OVR " + prospect.Overall
-                + " | POT " + prospect.Potential;
+                + " | OVR " + FormatOverall(prospect)
+                + " | POT " + FormatPotential(prospect)
+                + " | ACC " + prospect.ScoutingAccuracy + "%"
+                + " | " + prospect.ScoutingGrade
+                + " | " + prospect.ProjectedRole
+                + " | " + prospect.RiskHint
+                + " | " + prospect.DevelopmentTypeHint
+                + " | " + prospect.CeilingHint
+                + " | " + prospect.FloorHint;
     }
 
     private void RenderProspects(GameState state)
@@ -135,7 +152,7 @@ public class DraftController : MonoBehaviour
 
         if (!DraftService.IsDraftAvailable(state))
         {
-            CreateInfoRow(_prospectsContainer, "Драфт станет доступен после завершения плей-офф");
+            CreateInfoRow(_prospectsContainer, "Драфт доступен в фазе драфта. Скаутинг помогает оценить проспектов заранее.");
             return;
         }
 
@@ -146,12 +163,20 @@ public class DraftController : MonoBehaviour
             return;
         }
 
-        foreach (ProspectData prospect in prospects)
+        int shown = UiDisplayLimitConfig.ClampRowCount(prospects.Count, UiDisplayLimitConfig.MaxDraftProspectRows);
+        for (int i = 0; i < shown; i++)
         {
+            ProspectData prospect = prospects[i];
             ProspectRowView row = Instantiate(_prospectRowPrefab, _prospectsContainer);
             row.name = prospect.Id + "-prospect-row";
             row.gameObject.SetActive(true);
             row.Initialize(prospect, _screenController);
+        }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, prospects.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_prospectsContainer, limitMessage);
         }
     }
 
@@ -195,12 +220,20 @@ public class DraftController : MonoBehaviour
             return;
         }
 
-        foreach (ProspectData prospect in team.DraftRights)
+        int shown = UiDisplayLimitConfig.ClampRowCount(team.DraftRights.Count, UiDisplayLimitConfig.MaxDraftProspectRows);
+        for (int i = 0; i < shown; i++)
         {
+            ProspectData prospect = team.DraftRights[i];
             DraftRightsRowView row = Instantiate(_draftRightsRowPrefab, _draftRightsContainer);
             row.name = prospect.Id + "-draft-rights-row";
             row.gameObject.SetActive(true);
             row.Initialize(prospect);
+        }
+
+        string limitMessage = UiDisplayLimitConfig.BuildLimitMessage(shown, team.DraftRights.Count);
+        if (!string.IsNullOrEmpty(limitMessage))
+        {
+            CreateInfoRow(_draftRightsContainer, limitMessage);
         }
     }
 
@@ -319,5 +352,19 @@ public class DraftController : MonoBehaviour
         text.fontSize = 14;
         text.alignment = TextAnchor.MiddleLeft;
         text.color = Color.white;
+    }
+
+    private static string FormatOverall(ProspectData prospect)
+    {
+        return prospect.IsFullyScouted
+            ? prospect.Overall.ToString()
+            : prospect.EstimatedOverallMin + "-" + prospect.EstimatedOverallMax;
+    }
+
+    private static string FormatPotential(ProspectData prospect)
+    {
+        return prospect.IsFullyScouted
+            ? prospect.Potential.ToString()
+            : prospect.EstimatedPotentialMin + "-" + prospect.EstimatedPotentialMax;
     }
 }

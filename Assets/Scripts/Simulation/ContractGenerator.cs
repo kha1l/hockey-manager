@@ -27,16 +27,21 @@ public static class ContractGenerator
 
         foreach (PlayerData player in team.Players)
         {
-            NormalizeContract(player);
+            if (player != null && !player.IsRetired)
+            {
+                NormalizeContract(player);
+            }
         }
     }
 
     public static void AssignContract(PlayerData player)
     {
-        if (player == null)
+        if (player == null || player.IsRetired)
         {
             return;
         }
+
+        PlayerDevelopmentService.EnsureDevelopmentProfile(player);
 
         if (player.Salary > 0 && player.ContractYearsRemaining > 0)
         {
@@ -56,10 +61,12 @@ public static class ContractGenerator
 
     public static void NormalizeContract(PlayerData player)
     {
-        if (player == null)
+        if (player == null || player.IsRetired)
         {
             return;
         }
+
+        PlayerDevelopmentService.EnsureDevelopmentProfile(player);
 
         if (player.Salary <= 0)
         {

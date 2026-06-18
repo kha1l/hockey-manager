@@ -33,6 +33,10 @@ public class DevelopmentRowView : MonoBehaviour
             + " | POT " + change.OldPotential + " -> " + change.NewPotential
             + " (" + FormatSigned(change.PotentialDelta) + ")"
             + " | " + change.DevelopmentType
+            + " | " + (string.IsNullOrEmpty(change.DevelopmentEvent) ? "Normal" : change.DevelopmentEvent)
+            + " | Risk " + change.DevelopmentRiskAtTime
+            + " | Staff " + FormatSigned(change.StaffDevelopmentModifier)
+            + (string.IsNullOrEmpty(change.StaffDevelopmentSummary) ? "" : " " + change.StaffDevelopmentSummary)
             + " | " + change.Reason;
     }
 

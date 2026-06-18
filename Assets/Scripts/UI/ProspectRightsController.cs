@@ -58,7 +58,7 @@ public class ProspectRightsController : MonoBehaviour
         team.EnsurePlayers();
         team.EnsureDraftRights();
         TeamFinanceData finance = SalaryCapService.CalculateTeamFinance(team);
-        _teamInfoText.text = team.City + " " + team.Name
+        _teamInfoText.text = TeamIdentityService.GetDisplayName(team)
             + "\nПрава на проспектов: " + team.DraftRights.Count
             + "\nPayroll: " + FormatMoney(finance.Payroll)
             + " | Cap space: " + FormatMoney(finance.CapSpace)
@@ -82,12 +82,23 @@ public class ProspectRightsController : MonoBehaviour
         string elcLine = elcYears <= 0
             ? "Игрок не подходит для ELC"
             : "ELC: " + elcYears + " г. | $" + FormatMoney(CalculateEstimatedElcSalary(prospect, GetRules(state)));
+        int rank = ScoutingService.GetProspectRank(prospect, prospect.DraftPickOverall);
+        ScoutingService.EnsureProspectScouting(prospect, rank);
 
         _selectedProspectText.text = prospect.FirstName + " " + prospect.LastName
+            + " | #" + rank
+            + " | " + prospect.ProjectedRound
+            + " | " + prospect.ProspectArchetype
             + " | " + prospect.Position
             + " | " + prospect.Age
             + " | OVR " + prospect.Overall
             + " | POT " + prospect.Potential
+            + " | " + prospect.ScoutingGrade
+            + " | " + prospect.ProjectedRole
+            + " | " + prospect.RiskHint
+            + " | " + prospect.DevelopmentTypeHint
+            + " | " + prospect.CeilingHint
+            + " | " + prospect.FloorHint
             + " | " + FormatDevelopment(prospect.LastDevelopmentDelta)
             + " | R" + prospect.DraftRound
             + " | #" + prospect.DraftPickOverall

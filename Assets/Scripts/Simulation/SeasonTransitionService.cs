@@ -29,7 +29,16 @@ public static class SeasonTransitionService
         }
 
         state.EnsureCareerProgress();
+        OwnerGoalService.EvaluateCurrentTeamSeason(state);
+        SeasonRecapService.GenerateAndStoreSeasonRecap(state);
         SeasonHistoryService.ArchiveCurrentSeasonIfNeeded(state);
+        PrimaryCareerTeamService.UpdatePlayerPrimaryTeamAfterSeason(state);
+        if (state.LastRetirementProcessedSeasonStartYear != state.CurrentSeasonStartYear)
+        {
+            RetirementService.ProcessRetirementsAfterSeason(state);
+            state.LastRetirementProcessedSeasonStartYear = state.CurrentSeasonStartYear;
+        }
+
         OffseasonContractService.AdvanceAgesAndContracts(state);
         PlayerDevelopmentService.ApplyYearlyDevelopment(state);
         OffseasonContractService.MoveExpiredUfaPlayersToFreeAgency(state);
@@ -44,15 +53,25 @@ public static class SeasonTransitionService
         CreateNextSeason(state);
 
         ContractGenerator.EnsureContractsForTeams(state.Teams);
+        RetirementService.EnsureRetirementData(state);
+        TeamRosterService.EnsureRosterStatusesForTeams(state.Teams);
+        WaiverService.EnsureWaiverWire(state);
+        WaiverService.ResolveExpiredWaivers(state);
+        WaiverEligibilityService.EnsureWaiverEligibilityForTeams(state.Teams);
         FreeAgentService.EnsureFreeAgentData(state);
+        BetterFreeAgencyService.EnsureFreeAgentEvaluations(state);
         LineupService.EnsureLineupsForTeams(state.Teams);
         SpecialTeamsService.EnsureSpecialTeamsForTeams(state.Teams);
         TacticsService.EnsureTacticsForTeams(state.Teams);
         PlayerFatigueService.ResetFatigueForNewSeason(state.Teams);
         InjuryService.ResetInjuriesForNewSeason(state);
         ResetPlayerUsageForNewSeason(state.Teams);
+        ContractExtensionService.ResetSeasonNegotiationFields(state);
         PlayerRoleService.EnsureRolesForTeams(state.Teams);
         IceTimeService.EnsureUsageForTeams(state.Teams);
+        ContractExtensionService.EnsureExtensionDataForTeams(state, state.Teams);
+        OwnerGoalService.PrepareNewSeasonGoals(state);
+        GmCareerService.EnsureGmCareer(state);
 
         message = "Следующий сезон начат";
         return true;
@@ -66,6 +85,7 @@ public static class SeasonTransitionService
         state.Draft = null;
         state.DraftHistory = new DraftHistoryData();
         state.DraftPickOwnership = new List<DraftPickOwnershipData>();
+        state.ScoutingHistory = new ScoutingHistoryData();
     }
 
     private static void CreateNextLeagueCalendar(GameState state)
@@ -137,6 +157,9 @@ public static class SeasonTransitionService
                 player.AverageTimeOnIceSeconds = 0;
                 player.TotalTimeOnIceSeconds = 0;
                 player.GamesWithTimeOnIce = 0;
+                player.NHLGamesThisSeason = 0;
+                player.FarmDaysThisSeason = 0;
+                player.ReserveDaysThisSeason = 0;
             }
         }
     }

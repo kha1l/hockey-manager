@@ -5,6 +5,10 @@ public static class MatchSimulator
 {
     public static MatchResultData Simulate(TeamData homeTeam, TeamData awayTeam)
     {
+        TeamRosterService.EnsureRosterStatusesForTeam(homeTeam);
+        TeamRosterService.EnsureRosterStatusesForTeam(awayTeam);
+        CoachingStaffService.EnsureStaffForTeam(homeTeam);
+        CoachingStaffService.EnsureStaffForTeam(awayTeam);
         LineupService.EnsureLineup(homeTeam);
         LineupService.EnsureLineup(awayTeam);
         SpecialTeamsService.EnsureSpecialTeams(homeTeam);
@@ -19,8 +23,20 @@ public static class MatchSimulator
         PlayerRoleService.EnsureRolesForTeam(awayTeam);
         IceTimeService.EnsureUsageForTeam(homeTeam);
         IceTimeService.EnsureUsageForTeam(awayTeam);
+        ChemistryService.EnsureChemistryForTeam(homeTeam);
+        ChemistryService.EnsureChemistryForTeam(awayTeam);
 
-        int homeRating = TeamRatingCalculator.CalculateEffectiveLineupOverall(homeTeam) + 3;
+        return SimulatePrepared(homeTeam, awayTeam);
+    }
+
+    public static MatchResultData SimulateFast(TeamData homeTeam, TeamData awayTeam)
+    {
+        return SimulatePrepared(homeTeam, awayTeam);
+    }
+
+    private static MatchResultData SimulatePrepared(TeamData homeTeam, TeamData awayTeam)
+    {
+        int homeRating = TeamRatingCalculator.CalculateEffectiveLineupOverall(homeTeam) + 4;
         int awayRating = TeamRatingCalculator.CalculateEffectiveLineupOverall(awayTeam);
         int awayDefenseAdjustedRating = AdjustOpponentRating(awayRating, TacticsService.GetDefenseModifier(awayTeam));
         int homeDefenseAdjustedRating = AdjustOpponentRating(homeRating, TacticsService.GetDefenseModifier(homeTeam));
@@ -44,10 +60,12 @@ public static class MatchSimulator
             }
         }
 
+        ApplyLateGameScoreVariance(ref homeScore, ref awayScore, homeRating, awayRating, isOvertime);
+
         int homeShots = GenerateShots(homeRating, awayRating, TacticsService.GetShotModifier(homeTeam));
         int awayShots = GenerateShots(awayRating, homeRating, TacticsService.GetShotModifier(awayTeam));
-        int homePenaltyMinutes = GeneratePenaltyMinutes(TacticsService.GetPenaltyModifier(homeTeam));
-        int awayPenaltyMinutes = GeneratePenaltyMinutes(TacticsService.GetPenaltyModifier(awayTeam));
+        int homePenaltyMinutes = GeneratePenaltyMinutes(GetCoachingAdjustedPenaltyModifier(homeTeam));
+        int awayPenaltyMinutes = GeneratePenaltyMinutes(GetCoachingAdjustedPenaltyModifier(awayTeam));
         int homePowerPlayOpportunities = Mathf.Clamp(awayPenaltyMinutes / 2, 0, 7);
         int awayPowerPlayOpportunities = Mathf.Clamp(homePenaltyMinutes / 2, 0, 7);
         int homePowerPlayGoals = GeneratePowerPlayGoals(
@@ -98,10 +116,11 @@ public static class MatchSimulator
 
     private static int GenerateGoals(int teamRating, int opponentRating, float goalModifier, float riskModifier)
     {
-        float expectedGoals = 2.7f + ((teamRating - opponentRating) * 0.055f);
+        // Alpha tuning note: keep these scoring constants report-driven. Use AlphaBalanceReport before changing conversion.
+        float expectedGoals = 2.75f + ((teamRating - opponentRating) * 0.070f);
         expectedGoals *= goalModifier;
-        expectedGoals += UnityEngine.Random.Range(-0.65f, 0.85f) * riskModifier;
-        expectedGoals = Mathf.Clamp(expectedGoals, 1.1f, 4.7f);
+        expectedGoals += UnityEngine.Random.Range(-1.15f, 1.25f) * riskModifier;
+        expectedGoals = Mathf.Clamp(expectedGoals, 0.7f, 5.5f);
 
         int goals = Mathf.FloorToInt(expectedGoals);
         float fraction = expectedGoals - goals;
@@ -111,22 +130,60 @@ public static class MatchSimulator
             goals++;
         }
 
-        if (UnityEngine.Random.value < 0.24f)
+        if (UnityEngine.Random.value < 0.20f)
         {
             goals++;
         }
 
-        if (UnityEngine.Random.value < 0.09f)
+        if (UnityEngine.Random.value < 0.11f)
         {
             goals++;
         }
 
-        if (UnityEngine.Random.value < 0.12f)
+        if (UnityEngine.Random.value < 0.14f)
         {
             goals--;
         }
 
         return Mathf.Clamp(goals, 0, 8);
+    }
+
+    private static void ApplyLateGameScoreVariance(ref int homeScore, ref int awayScore, int homeRating, int awayRating, bool isOvertime)
+    {
+        if (isOvertime || homeScore == awayScore)
+        {
+            return;
+        }
+
+        int margin = Mathf.Abs(homeScore - awayScore);
+        if (margin == 1 && UnityEngine.Random.value < 0.30f)
+        {
+            if (homeScore > awayScore)
+            {
+                homeScore++;
+            }
+            else
+            {
+                awayScore++;
+            }
+
+            margin++;
+        }
+
+        int ratingGap = Mathf.Abs(homeRating - awayRating);
+        float extraGoalChance = Mathf.Clamp(0.06f + (ratingGap * 0.008f), 0.06f, 0.18f);
+        if (margin >= 2 && UnityEngine.Random.value < extraGoalChance)
+        {
+            bool homeIsFavorite = homeRating >= awayRating;
+            if ((homeScore > awayScore && homeIsFavorite) || (homeScore > awayScore && UnityEngine.Random.value < 0.35f))
+            {
+                homeScore++;
+            }
+            else if (awayScore > homeScore)
+            {
+                awayScore++;
+            }
+        }
     }
 
     private static int GenerateShots(int teamRating, int opponentRating, float shotModifier)
@@ -142,6 +199,23 @@ public static class MatchSimulator
         float expectedMinutes = UnityEngine.Random.Range(4f, 11f) * penaltyModifier;
         int minutes = Mathf.RoundToInt(expectedMinutes / 2f) * 2;
         return Mathf.Clamp(minutes, 0, 14);
+    }
+
+    private static float GetCoachingAdjustedPenaltyModifier(TeamData team)
+    {
+        float modifier = TacticsService.GetPenaltyModifier(team);
+        int disciplineModifier = CoachingStaffService.GetDisciplineModifier(team);
+        modifier -= disciplineModifier * 0.05f;
+
+        if (team != null
+            && team.Tactics != null
+            && team.Tactics.PresetName == "Aggressive"
+            && disciplineModifier < 0)
+        {
+            modifier += 0.08f;
+        }
+
+        return Mathf.Clamp(modifier, 0.75f, 1.40f);
     }
 
     private static int GeneratePowerPlayGoals(int opportunities, int powerPlayRating, int penaltyKillRating, int maxGoals)
@@ -178,6 +252,6 @@ public static class MatchSimulator
             return "Unknown Team";
         }
 
-        return team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

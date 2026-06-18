@@ -10,12 +10,14 @@ public static class SalaryCapService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         int payroll = 0;
 
         foreach (PlayerData player in team.Players)
         {
-            if (player != null)
+            if (player != null && !player.IsRetired && RosterStatusConfig.IsNhlRoster(player))
             {
+                // TODO: implement buried cap hit and two-way salary when AHL/cap details are added.
                 ContractGenerator.NormalizeContract(player);
                 payroll += player.Salary;
             }
@@ -44,20 +46,31 @@ public static class SalaryCapService
         return CalculatePayroll(team) < SalaryCapConfig.SalaryCapLowerLimit;
     }
 
+    public static bool CanAddSalary(TeamData team, int salary)
+    {
+        return CalculatePayroll(team) + salary <= SalaryCapConfig.SalaryCapUpperLimit;
+    }
+
+    public static bool CanFitSalary(TeamData team, int salary)
+    {
+        return CanAddSalary(team, salary);
+    }
+
     public static TeamFinanceData CalculateTeamFinance(TeamData team)
     {
         int payroll = CalculatePayroll(team);
+        int nhlPlayerCount = team == null ? 0 : TeamRosterService.GetNhlPlayers(team).Count;
 
         return new TeamFinanceData
         {
             TeamId = team == null ? "" : team.Id,
-            TeamName = team == null ? "" : team.City + " " + team.Name,
+            TeamName = TeamIdentityService.GetDisplayName(team),
             SalaryCapUpperLimit = SalaryCapConfig.SalaryCapUpperLimit,
             SalaryCapLowerLimit = SalaryCapConfig.SalaryCapLowerLimit,
             Payroll = payroll,
             CapSpace = SalaryCapConfig.SalaryCapUpperLimit - payroll,
             FloorSpace = payroll - SalaryCapConfig.SalaryCapLowerLimit,
-            PlayerCount = team == null || team.Players == null ? 0 : team.Players.Count,
+            PlayerCount = nhlPlayerCount,
             IsOverCap = payroll > SalaryCapConfig.SalaryCapUpperLimit,
             IsBelowFloor = payroll < SalaryCapConfig.SalaryCapLowerLimit
         };
@@ -75,7 +88,7 @@ public static class SalaryCapService
 
         foreach (PlayerData player in team.Players)
         {
-            if (player == null)
+            if (player == null || player.IsRetired)
             {
                 continue;
             }

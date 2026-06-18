@@ -208,7 +208,7 @@ public static class InjuryService
                 player.InjuryDaysRemaining--;
                 if (player.InjuryDaysRemaining <= 0)
                 {
-                    RecoverPlayer(state, player);
+                    RecoverPlayer(state, team, player);
                 }
             }
         }
@@ -240,7 +240,7 @@ public static class InjuryService
 
                 if (player.InjurySeverity != "LongTerm")
                 {
-                    RecoverPlayer(state, player);
+                    RecoverPlayer(state, team, player);
                 }
             }
         }
@@ -319,6 +319,23 @@ public static class InjuryService
         string injuredAt = DateTime.UtcNow.ToString("o");
         string expectedReturnDate = DateTime.UtcNow.Date.AddDays(days).ToString("yyyy-MM-dd");
 
+        string originalSlotType = "";
+        int originalLineOrPairNumber = 0;
+        string originalSlotPosition = "";
+        if (RosterStatusConfig.IsNhlRoster(player))
+        {
+            LineupService.EnsureLineup(team);
+            if (team.Lineup != null)
+            {
+                LineupService.IsPlayerInAnyActiveSlot(
+                    team.Lineup,
+                    player.Id,
+                    out originalSlotType,
+                    out originalLineOrPairNumber,
+                    out originalSlotPosition);
+            }
+        }
+
         player.IsInjured = true;
         player.InjuryType = type;
         player.InjurySeverity = severity;
@@ -334,7 +351,7 @@ public static class InjuryService
             PlayerId = player.Id,
             PlayerName = player.FirstName + " " + player.LastName,
             TeamId = team.Id,
-            TeamName = team.City + " " + team.Name,
+            TeamName = TeamIdentityService.GetDisplayName(team),
             Position = player.Position,
             Age = player.Age,
             InjuryType = type,
@@ -344,10 +361,17 @@ public static class InjuryService
             InjuredAtUtc = injuredAt,
             ExpectedReturnDate = expectedReturnDate,
             Status = "Active",
-            Source = string.IsNullOrEmpty(source) ? "Generated" : source
+            Source = string.IsNullOrEmpty(source) ? "Generated" : source,
+            OriginalRosterStatus = player.RosterStatus,
+            OriginalSlotType = originalSlotType,
+            OriginalLineOrPairNumber = originalLineOrPairNumber,
+            OriginalSlotPosition = originalSlotPosition,
+            ReplacementPlayerId = "",
+            ReplacementPlayerName = ""
         };
 
         state.InjuryHistory.Injuries.Add(record);
+        EventNewsService.CreateMajorInjuryNews(state, team, player);
         Debug.Log("Травма: " + record.PlayerName + " | " + record.InjuryType + " | " + record.InjuryDays + " дн.");
         return record;
     }
@@ -405,7 +429,7 @@ public static class InjuryService
         return minInclusive + (positiveHash % range);
     }
 
-    private static void RecoverPlayer(GameState state, PlayerData player)
+    private static void RecoverPlayer(GameState state, TeamData team, PlayerData player)
     {
         if (player == null)
         {
@@ -421,8 +445,10 @@ public static class InjuryService
         player.InjuredAtUtc = "";
         player.ExpectedReturnDate = "";
 
+        InjuryRecordData recoveredRecord = null;
         if (state == null || state.InjuryHistory == null || state.InjuryHistory.Injuries == null)
         {
+            TryRestoreRecoveredPlayerToLineup(state, team, player, null);
             return;
         }
 
@@ -431,8 +457,207 @@ public static class InjuryService
             if (record != null && record.PlayerId == playerId && record.Status == "Active")
             {
                 record.Status = "Recovered";
+                recoveredRecord = record;
             }
         }
+
+        TryRestoreRecoveredPlayerToLineup(state, team, player, recoveredRecord);
+    }
+
+    private static void TryRestoreRecoveredPlayerToLineup(
+        GameState state,
+        TeamData team,
+        PlayerData player,
+        InjuryRecordData record)
+    {
+        if (team == null || player == null || string.IsNullOrEmpty(player.Id))
+        {
+            return;
+        }
+
+        team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
+        LineupService.EnsureLineup(team);
+
+        if (record == null
+            || string.IsNullOrEmpty(record.OriginalSlotType)
+            || string.IsNullOrEmpty(record.OriginalSlotPosition))
+        {
+            if (!LineupService.ValidateLineup(team, out string _))
+            {
+                team.Lineup = LineupService.BuildAutoLineup(team);
+                team.SpecialTeams = SpecialTeamsService.BuildAutoSpecialTeams(team);
+            }
+
+            return;
+        }
+
+        if (!EnsureRecoveredPlayerInNhlRoster(state, team, player, record))
+        {
+            Debug.LogWarning("Игрок выздоровел, но не возвращён в Pro roster: " + GetPlayerName(player));
+            return;
+        }
+
+        if (!LineupService.TryRestorePlayerToSlot(
+            team,
+            player.Id,
+            record.OriginalSlotType,
+            record.OriginalLineOrPairNumber,
+            record.OriginalSlotPosition,
+            out string displacedPlayerId,
+            out string message))
+        {
+            Debug.LogWarning("Игрок выздоровел, но не возвращён в прежний слот: " + message);
+            return;
+        }
+
+        PlayerData displacedPlayer = FindPlayer(team, displacedPlayerId);
+        record.ReplacementPlayerId = displacedPlayer == null ? "" : displacedPlayer.Id;
+        record.ReplacementPlayerName = GetPlayerName(displacedPlayer);
+
+        team.SpecialTeams = SpecialTeamsService.BuildAutoSpecialTeams(team);
+        TacticsService.EnsureTactics(team);
+        PlayerRoleService.EnsureRolesForTeam(team);
+        IceTimeService.EnsureUsageForTeam(team);
+
+        Debug.Log("Игрок восстановился и вернулся в состав: " + GetPlayerName(player));
+    }
+
+    private static bool EnsureRecoveredPlayerInNhlRoster(
+        GameState state,
+        TeamData team,
+        PlayerData player,
+        InjuryRecordData record)
+    {
+        if (RosterStatusConfig.IsNhlRoster(player))
+        {
+            return true;
+        }
+
+        if (!RosterStatusConfig.IsFarmRoster(player) && !RosterStatusConfig.IsReserve(player))
+        {
+            return false;
+        }
+
+        if (TeamRosterService.GetNhlPlayers(team).Count >= RosterStatusConfig.MaxNhlRosterSize
+            && !TryCreateRosterRoomForRecoveredPlayer(state, team, player, record))
+        {
+            return false;
+        }
+
+        RosterMoveResultData result = RosterStatusConfig.IsReserve(player)
+            ? TeamRosterService.MoveReservePlayerToNhl(team, player.Id)
+            : TeamRosterService.CallUpPlayerToNhl(team, player.Id);
+        return result != null && result.Success;
+    }
+
+    private static bool TryCreateRosterRoomForRecoveredPlayer(
+        GameState state,
+        TeamData team,
+        PlayerData recoveredPlayer,
+        InjuryRecordData record)
+    {
+        PlayerData originalSlotPlayer = FindPlayer(
+            team,
+            LineupService.GetPlayerIdInSlot(
+                team,
+                record.OriginalSlotType,
+                record.OriginalLineOrPairNumber,
+                record.OriginalSlotPosition));
+
+        if (TryMoveTemporaryReplacementDown(state, team, originalSlotPlayer, recoveredPlayer))
+        {
+            return true;
+        }
+
+        List<PlayerData> scratches = LineupService.GetScratchPlayers(team);
+        scratches.Sort(CompareRecoverySendDownCandidates);
+        foreach (PlayerData scratch in scratches)
+        {
+            if (TryMoveTemporaryReplacementDown(state, team, scratch, recoveredPlayer))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryMoveTemporaryReplacementDown(
+        GameState state,
+        TeamData team,
+        PlayerData candidate,
+        PlayerData recoveredPlayer)
+    {
+        if (candidate == null
+            || recoveredPlayer == null
+            || candidate.Id == recoveredPlayer.Id
+            || !RosterStatusConfig.IsNhlRoster(candidate)
+            || candidate.IsRetired)
+        {
+            return false;
+        }
+
+        if (TeamRosterService.GetNhlPlayers(team).Count <= RosterStatusConfig.MinNhlRosterSize)
+        {
+            return false;
+        }
+
+        WaiverEligibilityService.EnsureWaiverEligibility(candidate);
+        if (candidate.RequiresWaivers)
+        {
+            return false;
+        }
+
+        RosterMoveResultData result = TeamRosterService.SendPlayerToFarm(state, team, candidate.Id);
+        if (result != null && result.Success && !RosterStatusConfig.IsNhlRoster(candidate))
+        {
+            return true;
+        }
+
+        result = TeamRosterService.MovePlayerToReserve(state, team, candidate.Id);
+        return result != null && result.Success && !RosterStatusConfig.IsNhlRoster(candidate);
+    }
+
+    private static PlayerData FindPlayer(TeamData team, string playerId)
+    {
+        if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return null;
+        }
+
+        team.EnsurePlayers();
+        foreach (PlayerData player in team.Players)
+        {
+            if (player != null && player.Id == playerId)
+            {
+                return player;
+            }
+        }
+
+        return null;
+    }
+
+    private static string GetPlayerName(PlayerData player)
+    {
+        return player == null ? "" : player.FirstName + " " + player.LastName;
+    }
+
+    private static int CompareRecoverySendDownCandidates(PlayerData left, PlayerData right)
+    {
+        int injuredComparison = (left != null && left.IsInjured ? 1 : 0).CompareTo(right != null && right.IsInjured ? 1 : 0);
+        if (injuredComparison != 0)
+        {
+            return injuredComparison;
+        }
+
+        int overallComparison = (left == null ? 0 : left.Overall).CompareTo(right == null ? 0 : right.Overall);
+        if (overallComparison != 0)
+        {
+            return overallComparison;
+        }
+
+        return string.Compare(left == null ? "" : left.Id, right == null ? "" : right.Id, StringComparison.Ordinal);
     }
 
     private static int CompareInjuredPlayers(PlayerData left, PlayerData right)

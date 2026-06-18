@@ -4,7 +4,7 @@ using UnityEngine;
 
 public static class SeasonGenerator
 {
-    public const int CurrentScheduleVersion = 4;
+    public const int CurrentScheduleVersion = 5;
     public const int TargetGamesPerTeam = SalaryCapConfig.TargetGamesPerTeam;
     private const int MaxGamesPerDay = 16;
 
@@ -170,7 +170,7 @@ public static class SeasonGenerator
 
     private static void AssignGameDays(SeasonData season)
     {
-        season.Schedule.Sort((left, right) => left.GameNumber.CompareTo(right.GameNumber));
+        SortScheduleForSpacing(season);
 
         Dictionary<int, HashSet<string>> teamsByDay = new Dictionary<int, HashSet<string>>();
         Dictionary<int, int> gamesByDay = new Dictionary<int, int>();
@@ -196,6 +196,139 @@ public static class SeasonGenerator
             teamsByDay[dayNumber].Add(game.AwayTeamId);
             gamesByDay[dayNumber]++;
         }
+
+        RenumberSchedule(season);
+    }
+
+    private static void SortScheduleForSpacing(SeasonData season)
+    {
+        if (season == null || season.Schedule == null || season.Schedule.Count <= 1)
+        {
+            return;
+        }
+
+        List<ScheduleGameData> remaining = new List<ScheduleGameData>(season.Schedule);
+        List<ScheduleGameData> ordered = new List<ScheduleGameData>();
+        Dictionary<string, string> lastOpponentByTeam = new Dictionary<string, string>();
+        int slotIndex = 0;
+
+        while (remaining.Count > 0)
+        {
+            int bestIndex = 0;
+            int bestScore = int.MaxValue;
+            int bestTieBreaker = int.MaxValue;
+
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                ScheduleGameData game = remaining[i];
+                int score = GetSpacingScore(game, lastOpponentByTeam);
+                int tieBreaker = GetStableScheduleTieBreaker(game, slotIndex);
+                if (score < bestScore || (score == bestScore && tieBreaker < bestTieBreaker))
+                {
+                    bestScore = score;
+                    bestTieBreaker = tieBreaker;
+                    bestIndex = i;
+                }
+            }
+
+            ScheduleGameData selectedGame = remaining[bestIndex];
+            remaining.RemoveAt(bestIndex);
+            ordered.Add(selectedGame);
+            if (selectedGame != null)
+            {
+                lastOpponentByTeam[selectedGame.HomeTeamId] = selectedGame.AwayTeamId;
+                lastOpponentByTeam[selectedGame.AwayTeamId] = selectedGame.HomeTeamId;
+            }
+
+            slotIndex++;
+        }
+
+        season.Schedule.Clear();
+        season.Schedule.AddRange(ordered);
+    }
+
+    private static int GetSpacingScore(ScheduleGameData game, Dictionary<string, string> lastOpponentByTeam)
+    {
+        if (game == null || lastOpponentByTeam == null)
+        {
+            return 100;
+        }
+
+        int score = 0;
+        if (lastOpponentByTeam.TryGetValue(game.HomeTeamId, out string homeLastOpponent)
+            && homeLastOpponent == game.AwayTeamId)
+        {
+            score += 1000;
+        }
+
+        if (lastOpponentByTeam.TryGetValue(game.AwayTeamId, out string awayLastOpponent)
+            && awayLastOpponent == game.HomeTeamId)
+        {
+            score += 1000;
+        }
+
+        return score;
+    }
+
+    private static int GetStableScheduleTieBreaker(ScheduleGameData game, int slotIndex)
+    {
+        unchecked
+        {
+            int hash = 17;
+            hash = (hash * 31) + StableHash(game == null ? "" : game.HomeTeamId);
+            hash = (hash * 31) + StableHash(game == null ? "" : game.AwayTeamId);
+            hash = (hash * 31) + (game == null ? 0 : game.GameNumber);
+            hash = (hash * 31) + slotIndex;
+            return hash == int.MinValue ? int.MaxValue : Math.Abs(hash);
+        }
+    }
+
+    private static int StableHash(string value)
+    {
+        unchecked
+        {
+            int hash = 23;
+            if (!string.IsNullOrEmpty(value))
+            {
+                for (int i = 0; i < value.Length; i++)
+                {
+                    hash = (hash * 31) + value[i];
+                }
+            }
+
+            return hash;
+        }
+    }
+
+    private static void RenumberSchedule(SeasonData season)
+    {
+        if (season == null || season.Schedule == null)
+        {
+            return;
+        }
+
+        season.Schedule.Sort(CompareGamesByDay);
+        for (int i = 0; i < season.Schedule.Count; i++)
+        {
+            if (season.Schedule[i] != null)
+            {
+                season.Schedule[i].GameNumber = i + 1;
+            }
+        }
+    }
+
+    private static int CompareGamesByDay(ScheduleGameData left, ScheduleGameData right)
+    {
+        int dayComparison = (left == null ? 0 : left.DayNumber).CompareTo(right == null ? 0 : right.DayNumber);
+        if (dayComparison != 0)
+        {
+            return dayComparison;
+        }
+
+        return string.Compare(
+            left == null ? "" : left.GameId,
+            right == null ? "" : right.GameId,
+            StringComparison.Ordinal);
     }
 
     private static bool CanPlaceGameOnDay(
@@ -253,6 +386,7 @@ public static class SeasonGenerator
         }
 
         bool allTeamsHaveTargetGames = true;
+        int imbalancedHomeAwayTeams = 0;
         foreach (TeamData team in teams)
         {
             if (gamesByTeam[team.Id] != TargetGamesPerTeam)
@@ -263,11 +397,15 @@ public static class SeasonGenerator
 
             if (homeGamesByTeam[team.Id] != TargetGamesPerTeam / 2 || awayGamesByTeam[team.Id] != TargetGamesPerTeam / 2)
             {
-                Debug.LogWarning(team.Id + " дома/в гостях: " + homeGamesByTeam[team.Id] + "/" + awayGamesByTeam[team.Id]);
+                imbalancedHomeAwayTeams++;
             }
         }
 
         Debug.Log("Создан календарь: " + season.Schedule.Count + " матчей, " + maxDayNumber + " игровых дней");
+        if (imbalancedHomeAwayTeams > 0)
+        {
+            Debug.Log("Календарь: home/away баланс не идеально ровный у " + imbalancedHomeAwayTeams + " команд");
+        }
 
         if (allTeamsHaveTargetGames)
         {
@@ -327,6 +465,6 @@ public static class SeasonGenerator
 
     private static string GetTeamDisplayName(TeamData team)
     {
-        return team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

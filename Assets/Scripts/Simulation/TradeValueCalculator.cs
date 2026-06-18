@@ -50,15 +50,25 @@ public static class TradeValueCalculator
 
     public static int CalculateDraftPickValue(DraftPickOwnershipData pick)
     {
+        return CalculateDraftPickValue(pick, null);
+    }
+
+    public static int CalculateDraftPickValue(DraftPickOwnershipData pick, GameState state)
+    {
         if (pick == null)
         {
             return 0;
         }
 
-        return CalculateDraftRoundValue(pick.Round);
+        return ApplyDraftClassModifier(CalculateDraftRoundValue(pick.Round), pick.Round, pick.DraftYear, state);
     }
 
     public static int CalculateAssetValue(TradeAssetData asset)
+    {
+        return CalculateAssetValue(asset, null);
+    }
+
+    public static int CalculateAssetValue(TradeAssetData asset, GameState state)
     {
         if (asset == null)
         {
@@ -72,13 +82,18 @@ public static class TradeValueCalculator
 
         if (asset.AssetType == "DraftPick")
         {
-            return CalculateDraftRoundValue(asset.DraftRound);
+            return ApplyDraftClassModifier(CalculateDraftRoundValue(asset.DraftRound), asset.DraftRound, asset.DraftYear, state);
         }
 
         return 0;
     }
 
     public static int CalculateAssetsValue(List<TradeAssetData> assets)
+    {
+        return CalculateAssetsValue(assets, null);
+    }
+
+    public static int CalculateAssetsValue(List<TradeAssetData> assets, GameState state)
     {
         if (assets == null)
         {
@@ -88,7 +103,7 @@ public static class TradeValueCalculator
         int value = 0;
         foreach (TradeAssetData asset in assets)
         {
-            value += CalculateAssetValue(asset);
+            value += CalculateAssetValue(asset, state);
         }
 
         return value;
@@ -98,17 +113,18 @@ public static class TradeValueCalculator
     {
         int value = asset.Overall * 10;
 
+        int potential = asset.Potential > 0 ? asset.Potential : asset.Overall;
         if (asset.Age <= 23)
         {
-            value += asset.Overall * 3;
+            value += potential * 3;
         }
         else if (asset.Age <= 30)
         {
-            value += asset.Overall * 2;
+            value += potential * 2;
         }
         else
         {
-            value += asset.Overall;
+            value += potential;
         }
 
         if (asset.ContractYearsRemaining <= 1)
@@ -142,5 +158,45 @@ public static class TradeValueCalculator
         }
 
         return round == 3 ? 175 : 0;
+    }
+
+    private static int ApplyDraftClassModifier(int baseValue, int round, int draftYear, GameState state)
+    {
+        if (baseValue <= 0 || state == null || state.Draft == null || state.Draft.ClassProfile == null)
+        {
+            return baseValue;
+        }
+
+        DraftClassProfileData profile = state.Draft.ClassProfile;
+        if (profile.DraftYear > 0 && draftYear > 0 && profile.DraftYear != draftYear)
+        {
+            return baseValue;
+        }
+
+        int percent = 0;
+        if (profile.StrengthType == DraftClassConfig.StrengthStrong)
+        {
+            percent += 10;
+        }
+        else if (profile.StrengthType == DraftClassConfig.StrengthWeak)
+        {
+            percent -= 10;
+        }
+
+        if (profile.DepthType == DraftClassConfig.DepthDeep)
+        {
+            percent += round == 1 ? 5 : 15;
+        }
+        else if (profile.DepthType == DraftClassConfig.DepthShallow)
+        {
+            percent -= round == 1 ? 5 : 15;
+        }
+        else if (profile.DepthType == DraftClassConfig.DepthTopHeavy)
+        {
+            percent += round == 1 ? 12 : -8;
+        }
+
+        int adjustedValue = baseValue + baseValue * percent / 100;
+        return Math.Max(0, adjustedValue);
     }
 }

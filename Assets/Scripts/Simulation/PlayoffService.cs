@@ -384,5 +384,6 @@ public static class PlayoffService
         }
 
         ContractGenerator.EnsureContractsForTeam(team);
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
     }
 }

@@ -31,12 +31,14 @@ public class ForwardLineRowView : MonoBehaviour
         AddPlayer(players, lw);
         AddPlayer(players, c);
         AddPlayer(players, rw);
+        LineChemistryData chemistry = ChemistryService.CalculateForwardLineChemistry(team, line);
 
         _infoText.text = "Звено " + line.LineNumber
             + " | LW: " + FormatPlayer(lw)
             + " | C: " + FormatPlayer(c)
             + " | RW: " + FormatPlayer(rw)
-            + " | AVG " + AverageEffectiveOverall(players);
+            + " | AVG " + AverageEffectiveOverall(players)
+            + " | CHEM " + chemistry.ChemistryScore + " " + chemistry.ChemistryLabel;
     }
 
     private static string FormatPlayer(PlayerData player)
@@ -49,10 +51,13 @@ public class ForwardLineRowView : MonoBehaviour
         PlayerFatigueService.EnsureFatigueFields(player);
         InjuryService.EnsureInjuryFields(player);
         PlayerRoleService.EnsureRole(player);
+        MoraleService.InitializePlayerMorale(player);
         return player.FirstName + " " + player.LastName
             + " (" + player.Position
             + " OVR " + player.Overall
             + " EFF " + PlayerFatigueService.GetEffectiveOverall(player)
+            + " MOR " + player.Morale
+            + FormatMoraleConcern(player)
             + " " + player.PlayerRole
             + " TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds)
             + " COND " + player.Condition
@@ -88,6 +93,14 @@ public class ForwardLineRowView : MonoBehaviour
         {
             players.Add(player);
         }
+    }
+
+    private static string FormatMoraleConcern(PlayerData player)
+    {
+        return player != null
+            && (player.MoraleStatus == MoraleConfig.StatusUnhappy || player.MoraleStatus == MoraleConfig.StatusVeryUnhappy)
+                ? " " + player.MoraleStatus
+                : "";
     }
 
     private static PlayerData FindPlayer(TeamData team, string playerId)

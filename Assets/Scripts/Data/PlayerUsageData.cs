@@ -14,6 +14,11 @@ public class PlayerUsageData
     public int EffectiveOverall;
     public int Condition;
     public int Fatigue;
+    public int Morale;
+    public int RoleSatisfaction;
+    public int IceTimeSatisfaction;
+    public string MoraleStatus;
+    public bool WantsTrade;
     public bool IsInjured;
     public bool IsActive;
     public bool IsOnPowerPlay;

@@ -139,6 +139,6 @@ public static class StandingsService
 
     private static string GetTeamDisplayName(TeamData team)
     {
-        return team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

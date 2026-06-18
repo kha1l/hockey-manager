@@ -11,6 +11,7 @@ public static class LineupService
             return;
         }
 
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         team.EnsurePlayers();
         if (team.Lineup == null)
         {
@@ -23,9 +24,9 @@ public static class LineupService
 
         if (!ValidateLineup(team, out string message))
         {
-            Debug.LogWarning("Lineup invalid for " + team.Name + ": " + message);
             if (team.Lineup.IsManual || IsInjuryValidationMessage(message))
             {
+                Debug.LogWarning("Lineup invalid for " + team.Name + ": " + message);
                 team.Lineup.IsValid = false;
                 team.Lineup.ValidationMessage = message;
                 return;
@@ -35,6 +36,7 @@ public static class LineupService
 
             if (!ValidateLineup(team, out message))
             {
+                Debug.LogWarning("Lineup invalid for " + team.Name + ": " + message);
                 team.Lineup.IsValid = false;
                 team.Lineup.ValidationMessage = message;
             }
@@ -75,6 +77,7 @@ public static class LineupService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         List<PlayerData> forwards = GetPlayersByCategory(team, "F");
         List<PlayerData> defensemen = GetPlayersByCategory(team, "D");
         List<PlayerData> goalies = GetPlayersByCategory(team, "G");
@@ -125,7 +128,11 @@ public static class LineupService
 
         foreach (PlayerData player in team.Players)
         {
-            if (player != null && !string.IsNullOrEmpty(player.Id) && !activePlayerIds.Contains(player.Id))
+            if (player != null
+                && RosterStatusConfig.IsNhlRoster(player)
+                && !player.IsRetired
+                && !string.IsNullOrEmpty(player.Id)
+                && !activePlayerIds.Contains(player.Id))
             {
                 lineup.ScratchPlayerIds.Add(player.Id);
             }
@@ -159,6 +166,7 @@ public static class LineupService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         TeamLineupData lineup = team.Lineup;
         if (lineup == null)
         {
@@ -304,7 +312,10 @@ public static class LineupService
         team.EnsurePlayers();
         foreach (PlayerData player in team.Players)
         {
-            if (IsPlayerEligibleForSlot(player, slotType, slotPosition))
+            if (RosterStatusConfig.IsNhlRoster(player)
+                && !player.IsRetired
+                && !player.IsOnWaivers
+                && IsPlayerEligibleForSlot(player, slotType, slotPosition))
             {
                 players.Add(player);
             }
@@ -329,11 +340,24 @@ public static class LineupService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         team.Lineup.EnsureCollections();
         PlayerData player = FindPlayer(team, playerId);
         if (player == null)
         {
             message = "Игрок не найден";
+            return false;
+        }
+
+        if (!RosterStatusConfig.IsNhlRoster(player) || player.IsRetired)
+        {
+            message = "В линии можно поставить только игрока Pro roster";
+            return false;
+        }
+
+        if (player.IsRetired)
+        {
+            message = "Игрок завершил карьеру";
             return false;
         }
 
@@ -399,6 +423,108 @@ public static class LineupService
         return true;
     }
 
+    public static string GetPlayerIdInSlot(
+        TeamData team,
+        string slotType,
+        int lineOrPairNumber,
+        string slotPosition)
+    {
+        if (team == null || team.Lineup == null)
+        {
+            return "";
+        }
+
+        return GetPlayerIdFromSlot(team.Lineup, slotType, lineOrPairNumber, slotPosition);
+    }
+
+    public static bool TryRestorePlayerToSlot(
+        TeamData team,
+        string playerId,
+        string slotType,
+        int lineOrPairNumber,
+        string slotPosition,
+        out string displacedPlayerId,
+        out string message)
+    {
+        displacedPlayerId = "";
+        if (team == null || team.Lineup == null)
+        {
+            message = "Состав не найден";
+            return false;
+        }
+
+        team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
+        team.Lineup.EnsureCollections();
+
+        if (!SlotExists(team.Lineup, slotType, lineOrPairNumber, slotPosition))
+        {
+            message = "Слот не найден";
+            return false;
+        }
+
+        PlayerData player = FindPlayer(team, playerId);
+        if (!IsPlayerEligibleForSlot(player, slotType, slotPosition))
+        {
+            message = "Игрок не подходит для возвращения в слот";
+            return false;
+        }
+
+        string oldPlayerId = GetPlayerIdFromSlot(team.Lineup, slotType, lineOrPairNumber, slotPosition);
+        if (oldPlayerId == playerId)
+        {
+            NormalizeScratchPlayerIds(team);
+            ValidateLineup(team, out message);
+            message = "Игрок уже находится в своём слоте";
+            return true;
+        }
+
+        bool playerWasActive = IsPlayerInAnyActiveSlot(
+            team.Lineup,
+            playerId,
+            out string existingSlotType,
+            out int existingLineOrPairNumber,
+            out string existingSlotPosition);
+
+        string existingSlotOldPlayerId = playerWasActive
+            ? GetPlayerIdFromSlot(team.Lineup, existingSlotType, existingLineOrPairNumber, existingSlotPosition)
+            : "";
+
+        SetPlayerIdToSlot(team.Lineup, slotType, lineOrPairNumber, slotPosition, playerId);
+        if (playerWasActive)
+        {
+            SetPlayerIdToSlot(team.Lineup, existingSlotType, existingLineOrPairNumber, existingSlotPosition, oldPlayerId);
+        }
+
+        NormalizeScratchPlayerIds(team);
+        string validationMessage = "";
+        bool hasDuplicatePlayers = HasDuplicateActivePlayers(team.Lineup);
+        bool isLineupValid = !hasDuplicatePlayers && ValidateLineup(team, out validationMessage);
+        if (hasDuplicatePlayers || !isLineupValid)
+        {
+            SetPlayerIdToSlot(team.Lineup, slotType, lineOrPairNumber, slotPosition, oldPlayerId);
+            if (playerWasActive)
+            {
+                SetPlayerIdToSlot(team.Lineup, existingSlotType, existingLineOrPairNumber, existingSlotPosition, existingSlotOldPlayerId);
+            }
+
+            NormalizeScratchPlayerIds(team);
+            ValidateLineup(team, out string _);
+            if (hasDuplicatePlayers)
+            {
+                validationMessage = "игрок назначен в несколько активных слотов";
+            }
+
+            message = "Не удалось вернуть игрока в слот: " + validationMessage;
+            return false;
+        }
+
+        displacedPlayerId = oldPlayerId;
+        team.Lineup.Touch();
+        message = "Игрок возвращён в прежний слот";
+        return true;
+    }
+
     public static bool TrySwapGoalies(TeamData team, out string message)
     {
         if (team == null || team.Lineup == null || team.Lineup.Goalies == null)
@@ -432,6 +558,11 @@ public static class LineupService
     public static bool IsPlayerEligibleForSlot(PlayerData player, string slotType, string slotPosition)
     {
         if (player == null)
+        {
+            return false;
+        }
+
+        if (!RosterStatusConfig.IsNhlRoster(player))
         {
             return false;
         }
@@ -605,17 +736,19 @@ public static class LineupService
     public static PlayerData GetStartingGoalie(TeamData team)
     {
         EnsureLineup(team);
-        return team == null || team.Lineup == null || team.Lineup.Goalies == null
+        PlayerData player = team == null || team.Lineup == null || team.Lineup.Goalies == null
             ? null
             : FindPlayer(team, team.Lineup.Goalies.StarterGoaliePlayerId);
+        return RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired ? player : null;
     }
 
     public static PlayerData GetBackupGoalie(TeamData team)
     {
         EnsureLineup(team);
-        return team == null || team.Lineup == null || team.Lineup.Goalies == null
+        PlayerData player = team == null || team.Lineup == null || team.Lineup.Goalies == null
             ? null
             : FindPlayer(team, team.Lineup.Goalies.BackupGoaliePlayerId);
+        return RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired ? player : null;
     }
 
     public static List<PlayerData> GetScratchPlayers(TeamData team)
@@ -645,7 +778,8 @@ public static class LineupService
         }
 
         EnsureLineup(team);
-        return team.Lineup != null && IsPlayerInLineup(team.Lineup, playerId);
+        PlayerData player = FindPlayer(team, playerId);
+        return RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired && team.Lineup != null && IsPlayerInLineup(team.Lineup, playerId);
     }
 
     public static bool IsPlayerInLineup(TeamLineupData lineup, string playerId)
@@ -724,6 +858,31 @@ public static class LineupService
         return false;
     }
 
+    public static bool HasNonNhlActivePlayers(TeamData team, out string message)
+    {
+        message = "";
+        if (team == null || team.Lineup == null)
+        {
+            return false;
+        }
+
+        team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
+        foreach (string playerId in GetActivePlayerIds(team.Lineup))
+        {
+            PlayerData player = FindPlayer(team, playerId);
+            if (player != null && (player.IsRetired || !RosterStatusConfig.IsNhlRoster(player)))
+            {
+                message = "В активных линиях игрок не из Pro roster: "
+                    + player.FirstName + " " + player.LastName
+                    + " (" + player.RosterStatus + ")";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static PlayerData FindPlayer(TeamData team, string playerId)
     {
         if (team == null || string.IsNullOrEmpty(playerId))
@@ -755,6 +914,11 @@ public static class LineupService
         foreach (PlayerData player in team.Players)
         {
             if (player == null)
+            {
+                continue;
+            }
+
+            if (!RosterStatusConfig.IsNhlRoster(player) || player.IsRetired || player.IsOnWaivers)
             {
                 continue;
             }
@@ -898,6 +1062,21 @@ public static class LineupService
             return false;
         }
 
+        if (!RosterStatusConfig.IsNhlRoster(player))
+        {
+            message = "Игрок из слота " + FormatSlot(slotType, lineOrPairNumber, slotPosition)
+                + " не находится в Pro roster: " + player.FirstName + " " + player.LastName
+                + " (" + player.RosterStatus + ")";
+            return false;
+        }
+
+        if (player.IsRetired)
+        {
+            message = "Игрок завершил карьеру в слоте " + FormatSlot(slotType, lineOrPairNumber, slotPosition)
+                + ": " + player.FirstName + " " + player.LastName;
+            return false;
+        }
+
         InjuryService.EnsureInjuryFields(player);
         if (player != null && player.IsInjured)
         {
@@ -933,6 +1112,7 @@ public static class LineupService
             PlayerFatigueService.EnsureFatigueFields(player);
             InjuryService.EnsureInjuryFields(player);
             PlayerRoleService.EnsureRole(player);
+            MoraleService.InitializePlayerMorale(player);
         }
 
         return new LineupSlotData
@@ -953,7 +1133,9 @@ public static class LineupService
                 : "INJ " + player.InjuryDaysRemaining + " дн.",
             PlayerRole = player == null ? "" : player.PlayerRole,
             UsageCategory = player == null ? "" : player.UsageCategory,
-            EstimatedTimeOnIceSeconds = player == null ? 0 : player.EstimatedTimeOnIceSeconds
+            EstimatedTimeOnIceSeconds = player == null ? 0 : player.EstimatedTimeOnIceSeconds,
+            Morale = player == null ? 0 : player.Morale,
+            MoraleStatus = player == null ? "" : player.MoraleStatus
         };
     }
 
@@ -1159,6 +1341,7 @@ public static class LineupService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         team.Lineup.EnsureCollections();
         HashSet<string> activeIds = GetActivePlayerIds(team.Lineup);
         HashSet<string> scratchIds = new HashSet<string>();
@@ -1166,7 +1349,12 @@ public static class LineupService
 
         foreach (PlayerData player in team.Players)
         {
-            if (player == null || string.IsNullOrEmpty(player.Id) || activeIds.Contains(player.Id) || scratchIds.Contains(player.Id))
+            if (player == null
+                || !RosterStatusConfig.IsNhlRoster(player)
+                || player.IsRetired
+                || string.IsNullOrEmpty(player.Id)
+                || activeIds.Contains(player.Id)
+                || scratchIds.Contains(player.Id))
             {
                 continue;
             }
@@ -1350,7 +1538,7 @@ public static class LineupService
     private static void AddPlayerById(TeamData team, string playerId, List<PlayerData> players)
     {
         PlayerData player = FindPlayer(team, playerId);
-        if (player != null)
+        if (RosterStatusConfig.IsNhlRoster(player) && !player.IsRetired)
         {
             players.Add(player);
         }

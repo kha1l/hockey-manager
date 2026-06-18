@@ -16,6 +16,10 @@ public class TradeProposalData
     public string CreatedAtUtc;
     public string Status;
     public string RejectionReason;
+    public TradeFitEvaluationData UserTeamEvaluation;
+    public TradeFitEvaluationData OtherTeamEvaluation;
+    public string AiDecisionReason;
+    public int AiAcceptanceScore;
 
     public TradeProposalData()
     {

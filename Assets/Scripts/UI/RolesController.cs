@@ -54,7 +54,7 @@ public class RolesController : MonoBehaviour
         PlayerData topDefense = FindTopPlayerByToi(team, "D");
         PlayerData starter = LineupService.GetStartingGoalie(team);
 
-        _summaryText.text = team.City + " " + team.Name
+        _summaryText.text = TeamIdentityService.GetDisplayName(team)
             + "\nСреднее TOI активных: " + IceTimeConfig.FormatSeconds(summary.AverageActiveTimeOnIceSeconds)
             + " | Активные: " + summary.ActivePlayerCount
             + " | Запасные: " + summary.ScratchPlayerCount

@@ -25,6 +25,7 @@ public class PlayerStatsController : MonoBehaviour
 
         List<PlayerSeasonStatsData> skaters = PlayerStatsService.GetTeamSkaterStats(season, teamId);
         List<PlayerSeasonStatsData> goalies = PlayerStatsService.GetTeamGoalieStats(season, teamId);
+        Dictionary<string, PlayerData> playersById = BuildPlayerLookup();
 
         if (skaters.Count == 0 && goalies.Count == 0)
         {
@@ -39,7 +40,7 @@ public class PlayerStatsController : MonoBehaviour
         foreach (PlayerSeasonStatsData stats in skaters)
         {
             PlayerStatsRowView row = CreateRow(stats.PlayerId + "-skater-row");
-            row.InitializeSkater(stats);
+            row.InitializeSkater(stats, FindPlayer(playersById, stats.PlayerId));
         }
 
         PlayerStatsRowView goalieHeader = CreateRow("goalie-header-row");
@@ -48,7 +49,7 @@ public class PlayerStatsController : MonoBehaviour
         foreach (PlayerSeasonStatsData stats in goalies)
         {
             PlayerStatsRowView row = CreateRow(stats.PlayerId + "-goalie-row");
-            row.InitializeGoalie(stats);
+            row.InitializeGoalie(stats, FindPlayer(playersById, stats.PlayerId));
         }
     }
 
@@ -72,5 +73,35 @@ public class PlayerStatsController : MonoBehaviour
 
             Destroy(child.gameObject);
         }
+    }
+
+    private static Dictionary<string, PlayerData> BuildPlayerLookup()
+    {
+        Dictionary<string, PlayerData> lookup = new Dictionary<string, PlayerData>();
+        if (GameSession.CurrentState == null)
+        {
+            return lookup;
+        }
+
+        List<PlayerData> players = CareerStatsService.GetAllPlayersIncludingFreeAgents(GameSession.CurrentState);
+        foreach (PlayerData player in players)
+        {
+            if (player != null && !string.IsNullOrEmpty(player.Id) && !lookup.ContainsKey(player.Id))
+            {
+                lookup.Add(player.Id, player);
+            }
+        }
+
+        return lookup;
+    }
+
+    private static PlayerData FindPlayer(Dictionary<string, PlayerData> playersById, string playerId)
+    {
+        if (playersById == null || string.IsNullOrEmpty(playerId))
+        {
+            return null;
+        }
+
+        return playersById.TryGetValue(playerId, out PlayerData player) ? player : null;
     }
 }

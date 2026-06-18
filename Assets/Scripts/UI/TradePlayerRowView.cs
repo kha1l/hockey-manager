@@ -36,6 +36,7 @@ public class TradePlayerRowView : MonoBehaviour
             + " | " + player.Position
             + " | " + player.Age
             + " лет | OVR " + player.Overall
+            + " | " + player.RosterStatus
             + " | $" + FormatMoney(player.Salary)
             + " | " + player.ContractYearsRemaining + " г."
             + (player.HasNoTradeClause ? " | NTC" : "");

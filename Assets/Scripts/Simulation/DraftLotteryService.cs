@@ -181,7 +181,7 @@ public static class DraftLotteryService
         {
             if (team != null)
             {
-                names.Add(team.City + " " + team.Name);
+                names.Add(TeamIdentityService.GetDisplayName(team));
             }
         }
 

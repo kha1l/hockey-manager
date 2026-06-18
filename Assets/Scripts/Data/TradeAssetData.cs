@@ -16,9 +16,11 @@ public class TradeAssetData
     public string Position;
     public int Age;
     public int Overall;
+    public int Potential;
     public int Salary;
     public int ContractYearsRemaining;
     public bool HasNoTradeClause;
+    public string RosterStatus;
     public int RetainedSalaryPercent;
     public int EstimatedTradeValue;
 }

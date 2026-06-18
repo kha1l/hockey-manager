@@ -57,6 +57,8 @@ public class LineupSlotRowView : MonoBehaviour
             + " | TOI " + IceTimeConfig.FormatSeconds(slot.EstimatedTimeOnIceSeconds)
             + " | COND " + slot.Condition
             + " | FAT " + slot.Fatigue
+            + " | MOR " + slot.Morale
+            + (slot.MoraleStatus == MoraleConfig.StatusUnhappy || slot.MoraleStatus == MoraleConfig.StatusVeryUnhappy ? " " + slot.MoraleStatus : "")
             + injuryLabel;
     }
 }

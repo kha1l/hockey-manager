@@ -56,6 +56,8 @@ public static class PlayerFatigueService
 
         EnsureFatigueFields(player);
         int effectiveOverall = player.Overall - GetOverallPenaltyFromCondition(player);
+        int morale = player.HasMoraleInitialized ? player.Morale : MoraleConfig.DefaultMorale;
+        effectiveOverall -= MoraleConfig.GetEffectiveOverallPenalty(morale);
         return Mathf.Clamp(effectiveOverall, 40, 99);
     }
 
@@ -129,6 +131,7 @@ public static class PlayerFatigueService
         }
 
         RecoverScratches(team);
+        RecoverNonNhlOrganizationPlayers(team);
     }
 
     public static void RecoverScratches(TeamData team)
@@ -142,6 +145,24 @@ public static class PlayerFatigueService
         foreach (PlayerData player in scratches)
         {
             RecoverPlayer(player, FatigueConfig.ScratchRecovery);
+        }
+    }
+
+    public static void RecoverNonNhlOrganizationPlayers(TeamData team)
+    {
+        if (team == null)
+        {
+            return;
+        }
+
+        team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
+        foreach (PlayerData player in team.Players)
+        {
+            if (player != null && (RosterStatusConfig.IsFarmRoster(player) || RosterStatusConfig.IsReserve(player)))
+            {
+                RecoverPlayer(player, FatigueConfig.ScratchRecovery);
+            }
         }
     }
 
@@ -213,10 +234,28 @@ public static class PlayerFatigueService
             fatigueGain++;
         }
 
+        if (player.Position == "G" && HasHighQualityGoalieCoach(team))
+        {
+            fatigueGain--;
+        }
+
         return Mathf.Clamp(
             fatigueGain,
             FatigueConfig.MinSingleGameFatigueGain,
             FatigueConfig.MaxSingleGameFatigueGain);
+    }
+
+    private static bool HasHighQualityGoalieCoach(TeamData team)
+    {
+        if (team == null)
+        {
+            return false;
+        }
+
+        CoachingStaffService.EnsureStaffForTeam(team);
+        return team.Staff != null
+            && team.Staff.GoalieCoach != null
+            && team.Staff.GoalieCoach.GoalieDevelopmentRating >= 82;
     }
 
     private static float GetTacticsFatigueModifier(TeamData team)
@@ -247,7 +286,7 @@ public static class PlayerFatigueService
     private static int GetBaseFatigueForPlayer(TeamData team, PlayerData player)
     {
         LineupService.EnsureLineup(team);
-        if (team == null || team.Lineup == null || player == null)
+        if (team == null || team.Lineup == null || player == null || !RosterStatusConfig.IsNhlRoster(player))
         {
             return FatigueConfig.ForwardLine4Fatigue;
         }

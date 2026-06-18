@@ -21,11 +21,14 @@ public static class FreeAgentService
         }
 
         state.FreeAgentPool.EnsureFreeAgents();
+        RemoveRetiredFreeAgents(state);
 
         if (!state.FreeAgentPool.IsInitialized || state.FreeAgentPool.FreeAgents.Count == 0)
         {
             state.FreeAgentPool = FreeAgentGenerator.CreateFreeAgentPool();
         }
+
+        TeamRosterService.EnsureFreeAgentRosterStatuses(state.FreeAgentPool.FreeAgents);
 
         if (state.FreeAgentHistory == null)
         {
@@ -33,6 +36,8 @@ public static class FreeAgentService
         }
 
         state.FreeAgentHistory.EnsureSignings();
+        BetterFreeAgencyService.EnsureFreeAgencyOfferHistory(state);
+        BetterFreeAgencyService.EnsureFreeAgentEvaluations(state);
     }
 
     public static bool TrySignFreeAgent(
@@ -63,8 +68,22 @@ public static class FreeAgentService
         freeAgent.TeamId = team.Id;
         freeAgent.ContractStatus = "Signed";
         freeAgent.IsGeneratedContract = true;
+        ContractExtensionService.ResetPlayerExtensionFields(freeAgent);
+        string rosterStatus = TeamRosterService.GetNhlPlayers(team).Count < GetRules(state).MaxRosterSize
+            ? RosterStatusConfig.NHL
+            : RosterStatusConfig.Farm;
+        freeAgent.RosterStatus = rosterStatus;
+        freeAgent.PreviousRosterStatus = RosterStatusConfig.FreeAgent;
+        freeAgent.RosterStatusUpdatedAtUtc = DateTime.UtcNow.ToString("o");
+        freeAgent.IsOnWaivers = false;
+        freeAgent.WaiverStatus = WaiverConfig.WaiverStatusNone;
+        freeAgent.WaiverIntendedDestination = "";
+        LeadershipService.ClearPlayerCaptaincy(freeAgent);
+        LeadershipService.EnsurePlayerLeadershipProfile(freeAgent);
+        WaiverEligibilityService.EnsureWaiverEligibility(freeAgent);
         PlayerFatigueService.EnsureFatigueFields(freeAgent);
         team.Players.Add(freeAgent);
+        LineupService.SyncScratchPlayers(team);
 
         signing.Salary = freeAgent.Salary;
         signing.ContractYears = freeAgent.ContractYearsRemaining;
@@ -84,6 +103,7 @@ public static class FreeAgentService
             ? new List<PlayerData>()
             : new List<PlayerData>(state.FreeAgentPool.FreeAgents);
 
+        freeAgents.RemoveAll(player => player == null || player.IsRetired);
         freeAgents.Sort(CompareFreeAgents);
         return freeAgents;
     }
@@ -97,7 +117,7 @@ public static class FreeAgentService
 
         foreach (PlayerData player in state.FreeAgentPool.FreeAgents)
         {
-            if (player != null && player.Id == playerId)
+            if (player != null && !player.IsRetired && player.Id == playerId)
             {
                 return player;
             }
@@ -130,6 +150,12 @@ public static class FreeAgentService
             return false;
         }
 
+        if (freeAgent.IsRetired)
+        {
+            message = "Игрок завершил карьеру";
+            return false;
+        }
+
         if (!LeaguePhaseService.IsFreeAgencyOpen(state))
         {
             message = "Рынок свободных агентов откроется после завершения плей-офф";
@@ -149,13 +175,8 @@ public static class FreeAgentService
         }
 
         team.EnsurePlayers();
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
         LeagueRulesData rules = GetRules(state);
-
-        if (team.Players.Count >= rules.MaxRosterSize)
-        {
-            message = "Достигнут максимальный размер состава";
-            return false;
-        }
 
         if (freeAgent.Salary < rules.LeagueMinimumSalary)
         {
@@ -177,8 +198,9 @@ public static class FreeAgentService
             freeAgent.ContractYearsRemaining = rules.MaxContractYearsFreeAgent;
         }
 
-        int payrollAfter = SalaryCapService.CalculatePayroll(team) + freeAgent.Salary;
-        if (payrollAfter > rules.SalaryCapUpperLimit)
+        bool willAssignToNhl = TeamRosterService.GetNhlPlayers(team).Count < rules.MaxRosterSize;
+        int payrollAfter = SalaryCapService.CalculatePayroll(team) + (willAssignToNhl ? freeAgent.Salary : 0);
+        if (willAssignToNhl && payrollAfter > rules.SalaryCapUpperLimit)
         {
             message = "Недостаточно места под потолком зарплат";
             return false;
@@ -196,7 +218,7 @@ public static class FreeAgentService
             PlayerId = freeAgent == null ? "" : freeAgent.Id,
             PlayerName = freeAgent == null ? "" : freeAgent.FirstName + " " + freeAgent.LastName,
             TeamId = team == null ? "" : team.Id,
-            TeamName = team == null ? "" : team.City + " " + team.Name,
+            TeamName = TeamIdentityService.GetDisplayName(team),
             SignedAtUtc = DateTime.UtcNow.ToString("o"),
             Salary = freeAgent == null ? 0 : freeAgent.Salary,
             ContractYears = freeAgent == null ? 0 : freeAgent.ContractYearsRemaining,
@@ -252,5 +274,25 @@ public static class FreeAgentService
     private static LeagueRulesData GetRules(GameState state)
     {
         return state.LeagueRules == null ? LeagueRulesConfig.CreateDefaultRules() : state.LeagueRules;
+    }
+
+    private static void RemoveRetiredFreeAgents(GameState state)
+    {
+        if (state == null || state.FreeAgentPool == null || state.FreeAgentPool.FreeAgents == null)
+        {
+            return;
+        }
+
+        for (int i = state.FreeAgentPool.FreeAgents.Count - 1; i >= 0; i--)
+        {
+            PlayerData player = state.FreeAgentPool.FreeAgents[i];
+            if (player == null || !player.IsRetired)
+            {
+                continue;
+            }
+
+            RetirementService.AddRetiredPlayer(state, RetirementService.BuildRetiredPlayerData(state, null, player, player.RetirementReason));
+            state.FreeAgentPool.FreeAgents.RemoveAt(i);
+        }
     }
 }

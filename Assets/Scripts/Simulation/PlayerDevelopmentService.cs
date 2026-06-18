@@ -6,6 +6,12 @@ public static class PlayerDevelopmentService
 {
     private static HashSet<string> _processedDevelopmentKeys;
 
+    private class DevelopmentAdjustmentResult
+    {
+        public int Delta;
+        public string Event = "Normal";
+    }
+
     public static void EnsureDevelopmentHistory(GameState state)
     {
         if (state == null)
@@ -24,6 +30,8 @@ public static class PlayerDevelopmentService
     public static void ApplyYearlyDevelopment(GameState state)
     {
         EnsureDevelopmentHistory(state);
+        MoraleService.EnsureMorale(state);
+        CoachingStaffService.EnsureStaffForTeams(state == null ? null : state.Teams);
         if (state == null || state.CurrentSeasonStartYear <= 0)
         {
             return;
@@ -65,7 +73,11 @@ public static class PlayerDevelopmentService
             }
 
             team.EnsurePlayers();
+            TeamRosterService.EnsureRosterStatusesForTeam(team);
+            LeadershipService.EnsureLeadershipForTeam(team);
+            CoachingStaffService.EnsureStaffForTeam(team);
             string teamName = GetTeamName(team);
+            int leadershipSupport = LeadershipService.GetYoungPlayerDevelopmentSupport(team);
             foreach (PlayerData player in team.Players)
             {
                 PlayerDevelopmentChangeData change = ApplyDevelopmentToPlayer(
@@ -73,7 +85,9 @@ public static class PlayerDevelopmentService
                     player,
                     "RosterPlayer",
                     team.Id,
-                    teamName);
+                    teamName,
+                    leadershipSupport,
+                    team);
 
                 AddChange(state, change);
             }
@@ -100,7 +114,9 @@ public static class PlayerDevelopmentService
                 player,
                 "FreeAgent",
                 "free-agents",
-                "Free Agents");
+                "Free Agents",
+                0,
+                null);
 
             AddChange(state, change);
         }
@@ -122,6 +138,7 @@ public static class PlayerDevelopmentService
             }
 
             team.EnsureDraftRights();
+            CoachingStaffService.EnsureStaffForTeam(team);
             string teamName = GetTeamName(team);
             foreach (ProspectData prospect in team.DraftRights)
             {
@@ -134,7 +151,8 @@ public static class PlayerDevelopmentService
                     state,
                     prospect,
                     team.Id,
-                    teamName);
+                    teamName,
+                    team);
 
                 AddChange(state, change);
             }
@@ -146,7 +164,9 @@ public static class PlayerDevelopmentService
         PlayerData player,
         string entityType,
         string teamId,
-        string teamName)
+        string teamName,
+        int leadershipSupport,
+        TeamData team)
     {
         if (state == null || player == null || IsAlreadyProcessed(entityType, player.Id))
         {
@@ -154,16 +174,71 @@ public static class PlayerDevelopmentService
         }
 
         MarkProcessed(entityType, player.Id);
+        EnsureDevelopmentProfile(player);
 
         int oldOverall = player.Overall;
         int oldPotential = player.Potential;
-        int delta = CalculatePlayerDelta(player, state.CurrentSeasonStartYear);
+        int baseDelta = CalculatePlayerDelta(player, state.CurrentSeasonStartYear);
+        DevelopmentAdjustmentResult adjustment = CalculateRiskAdjustedDevelopment(
+            player.Id,
+            player.Age,
+            player.Overall,
+            player.HiddenCeiling,
+            player.HiddenFloor,
+            player.DevelopmentType,
+            player.BoomChance,
+            player.BustChance,
+            baseDelta,
+            state.CurrentSeasonStartYear,
+            PlayerDevelopmentConfig.MaxYearlyGrowth);
+        int delta = adjustment.Delta;
+        MoraleService.InitializePlayerMorale(player);
+        int moraleAtTime = player.Morale;
+        int moraleDevelopmentModifier = CalculateMoraleDevelopmentModifier(player, state.CurrentSeasonStartYear);
+        if (moraleDevelopmentModifier != 0)
+        {
+            delta = ClampDelta(delta + moraleDevelopmentModifier, PlayerDevelopmentConfig.MaxYearlyRegression, PlayerDevelopmentConfig.MaxYearlyGrowth + 2);
+            if (adjustment.Event == "Normal")
+            {
+                adjustment.Event = moraleDevelopmentModifier > 0 ? "MoraleBoost" : "MoraleDrag";
+            }
+        }
+
+        int leadershipDevelopmentModifier = CalculateLeadershipDevelopmentModifier(player, leadershipSupport, state.CurrentSeasonStartYear);
+        if (leadershipDevelopmentModifier != 0)
+        {
+            delta = ClampDelta(delta + leadershipDevelopmentModifier, PlayerDevelopmentConfig.MaxYearlyRegression, PlayerDevelopmentConfig.MaxYearlyGrowth + 2);
+            if (adjustment.Event == "Normal")
+            {
+                adjustment.Event = "LeadershipBoost";
+            }
+        }
+
+        int staffDevelopmentModifier = CalculateStaffDevelopmentModifier(team, player, state.CurrentSeasonStartYear);
+        string staffDevelopmentSummary = BuildStaffDevelopmentSummary(team, player, staffDevelopmentModifier);
+        // TODO: Later seasons can use MVP/Best Rookie awards as a small morale or development confidence boost.
+        if (staffDevelopmentModifier != 0)
+        {
+            delta = ClampDelta(delta + staffDevelopmentModifier, PlayerDevelopmentConfig.MaxYearlyRegression, PlayerDevelopmentConfig.MaxYearlyGrowth + 2);
+            if (adjustment.Event == "Normal")
+            {
+                adjustment.Event = staffDevelopmentModifier > 0 ? "StaffDevelopmentBoost" : "StaffDevelopmentDrag";
+            }
+        }
+
         int potentialDelta = CalculatePotentialDelta(
             player.Age,
             oldOverall,
             oldPotential,
             state.CurrentSeasonStartYear,
             player.Id);
+        potentialDelta = CalculateRiskAdjustedPotentialDelta(
+            oldPotential,
+            player.HiddenCeiling,
+            player.HiddenFloor,
+            player.Age,
+            potentialDelta,
+            adjustment.Event);
         int newOverall = PlayerDevelopmentConfig.ClampOverall(oldOverall + delta);
         int newPotential = PlayerDevelopmentConfig.ClampPotential(oldPotential + potentialDelta);
 
@@ -179,7 +254,7 @@ public static class PlayerDevelopmentService
         player.Overall = newOverall;
         player.Potential = newPotential;
         player.LastDevelopmentDelta = newOverall - oldOverall;
-        player.LastDevelopmentType = developmentType;
+        player.LastDevelopmentType = adjustment.Event == "Normal" ? developmentType : adjustment.Event;
 
         if (player.LastDevelopmentDelta == 0 && newPotential - oldPotential == 0)
         {
@@ -199,15 +274,26 @@ public static class PlayerDevelopmentService
             newOverall,
             oldPotential,
             newPotential,
-            developmentType,
-            GetReason(entityType, player.Age, player.LastDevelopmentDelta));
+            player.DevelopmentType,
+            adjustment.Event,
+            player.HiddenCeiling,
+            player.HiddenFloor,
+            player.DevelopmentRisk,
+            moraleAtTime,
+            moraleDevelopmentModifier,
+            leadershipSupport,
+            leadershipDevelopmentModifier,
+            staffDevelopmentModifier,
+            staffDevelopmentSummary,
+            BuildDevelopmentReason(GetReason(entityType, player.Age, player.LastDevelopmentDelta), adjustment.Event));
     }
 
     private static PlayerDevelopmentChangeData ApplyDevelopmentToProspect(
         GameState state,
         ProspectData prospect,
         string teamId,
-        string teamName)
+        string teamName,
+        TeamData team)
     {
         if (state == null || prospect == null || IsAlreadyProcessed("DraftRightsProspect", prospect.Id))
         {
@@ -215,16 +301,51 @@ public static class PlayerDevelopmentService
         }
 
         MarkProcessed("DraftRightsProspect", prospect.Id);
+        int draftRank = prospect.DraftRank > 0
+            ? prospect.DraftRank
+            : (prospect.DraftPickOverall > 0 ? prospect.DraftPickOverall : prospect.ProjectedPick);
+        ProspectRiskService.EnsureRiskProfile(prospect, draftRank);
 
         int oldOverall = prospect.Overall;
         int oldPotential = prospect.Potential;
-        int delta = CalculateProspectDelta(prospect, state.CurrentSeasonStartYear);
+        int baseDelta = CalculateProspectDelta(prospect, state.CurrentSeasonStartYear);
+        DevelopmentAdjustmentResult adjustment = CalculateRiskAdjustedDevelopment(
+            prospect.Id,
+            prospect.Age,
+            prospect.Overall,
+            prospect.HiddenCeiling,
+            prospect.HiddenFloor,
+            prospect.DevelopmentType,
+            prospect.BoomChance,
+            prospect.BustChance,
+            baseDelta,
+            state.CurrentSeasonStartYear,
+            PlayerDevelopmentConfig.MaxProspectYearlyGrowth);
+        int delta = adjustment.Delta;
+        PlayerData prospectAsPlayer = CreateProspectPlayerProxy(prospect);
+        int staffDevelopmentModifier = CalculateStaffDevelopmentModifier(team, prospectAsPlayer, state.CurrentSeasonStartYear);
+        string staffDevelopmentSummary = BuildStaffDevelopmentSummary(team, prospectAsPlayer, staffDevelopmentModifier);
+        if (staffDevelopmentModifier != 0)
+        {
+            delta = ClampDelta(delta + staffDevelopmentModifier, PlayerDevelopmentConfig.MaxYearlyRegression, PlayerDevelopmentConfig.MaxProspectYearlyGrowth + 2);
+            if (adjustment.Event == "Normal")
+            {
+                adjustment.Event = staffDevelopmentModifier > 0 ? "StaffDevelopmentBoost" : "StaffDevelopmentDrag";
+            }
+        }
         int potentialDelta = CalculatePotentialDelta(
             prospect.Age,
             oldOverall,
             oldPotential,
             state.CurrentSeasonStartYear,
             prospect.Id);
+        potentialDelta = CalculateRiskAdjustedPotentialDelta(
+            oldPotential,
+            prospect.HiddenCeiling,
+            prospect.HiddenFloor,
+            prospect.Age,
+            potentialDelta,
+            adjustment.Event);
         int newOverall = PlayerDevelopmentConfig.ClampOverall(oldOverall + delta);
         int newPotential = PlayerDevelopmentConfig.ClampPotential(oldPotential + potentialDelta);
 
@@ -240,7 +361,7 @@ public static class PlayerDevelopmentService
         prospect.Overall = newOverall;
         prospect.Potential = newPotential;
         prospect.LastDevelopmentDelta = newOverall - oldOverall;
-        prospect.LastDevelopmentType = developmentType;
+        prospect.LastDevelopmentType = adjustment.Event == "Normal" ? developmentType : adjustment.Event;
 
         if (prospect.LastDevelopmentDelta == 0 && newPotential - oldPotential == 0)
         {
@@ -260,8 +381,405 @@ public static class PlayerDevelopmentService
             newOverall,
             oldPotential,
             newPotential,
-            developmentType,
-            GetReason("DraftRightsProspect", prospect.Age, prospect.LastDevelopmentDelta));
+            prospect.DevelopmentType,
+            adjustment.Event,
+            prospect.HiddenCeiling,
+            prospect.HiddenFloor,
+            prospect.DevelopmentRisk,
+            0,
+            0,
+            0,
+            0,
+            staffDevelopmentModifier,
+            staffDevelopmentSummary,
+            BuildDevelopmentReason(GetReason("DraftRightsProspect", prospect.Age, prospect.LastDevelopmentDelta), adjustment.Event));
+    }
+
+    public static void EnsureDevelopmentProfile(PlayerData player)
+    {
+        if (player == null)
+        {
+            return;
+        }
+
+        if (player.HasDevelopmentProfile)
+        {
+            if (!ProspectRiskConfig.IsValidDevelopmentType(player.DevelopmentType))
+            {
+                player.DevelopmentType = ProspectRiskConfig.DevelopmentTypeSafe;
+            }
+
+            player.HiddenCeiling = ProspectRiskConfig.ClampCeiling(Math.Max(player.HiddenCeiling, Math.Max(player.Potential, player.Overall)));
+            player.HiddenFloor = ProspectRiskConfig.ClampFloor(player.HiddenFloor <= 0 ? Math.Max(40, player.Overall - 5) : player.HiddenFloor);
+            if (player.HiddenFloor > player.HiddenCeiling)
+            {
+                player.HiddenFloor = Math.Min(player.HiddenCeiling, ProspectRiskConfig.MaxFloor);
+            }
+
+            player.DevelopmentRisk = ProspectRiskConfig.ClampRisk(player.DevelopmentRisk);
+            player.BoomChance = ProspectRiskConfig.ClampChance(player.BoomChance);
+            player.BustChance = ProspectRiskConfig.ClampChance(player.BustChance);
+            player.DevelopmentTypeHint = ProspectRiskConfig.GetDevelopmentTypeHint(player.DevelopmentType);
+            return;
+        }
+
+        player.HiddenCeiling = ProspectRiskConfig.ClampCeiling(Math.Max(player.Potential, player.Overall));
+        player.HiddenFloor = ProspectRiskConfig.ClampFloor(Math.Max(40, player.Overall - 5));
+        player.DevelopmentRisk = 20;
+        player.BoomChance = 3;
+        player.BustChance = 3;
+        player.DevelopmentType = ProspectRiskConfig.DevelopmentTypeSafe;
+        player.DevelopmentTypeHint = ProspectRiskConfig.GetDevelopmentTypeHint(player.DevelopmentType);
+        player.HasDevelopmentProfile = true;
+    }
+
+    public static int CalculateRiskAdjustedDevelopmentDelta(PlayerData player, int baseDelta, int seasonStartYear)
+    {
+        if (player == null)
+        {
+            return baseDelta;
+        }
+
+        EnsureDevelopmentProfile(player);
+        return CalculateRiskAdjustedDevelopment(
+            player.Id,
+            player.Age,
+            player.Overall,
+            player.HiddenCeiling,
+            player.HiddenFloor,
+            player.DevelopmentType,
+            player.BoomChance,
+            player.BustChance,
+            baseDelta,
+            seasonStartYear,
+            PlayerDevelopmentConfig.MaxYearlyGrowth).Delta;
+    }
+
+    private static DevelopmentAdjustmentResult CalculateRiskAdjustedDevelopment(
+        string playerId,
+        int age,
+        int overall,
+        int hiddenCeiling,
+        int hiddenFloor,
+        string developmentProfileType,
+        int boomChance,
+        int bustChance,
+        int baseDelta,
+        int seasonStartYear,
+        int maxGrowth)
+    {
+        DevelopmentAdjustmentResult result = new DevelopmentAdjustmentResult
+        {
+            Delta = baseDelta,
+            Event = "Normal"
+        };
+
+        string type = ProspectRiskConfig.IsValidDevelopmentType(developmentProfileType)
+            ? developmentProfileType
+            : ProspectRiskConfig.DevelopmentTypeSafe;
+        string seed = playerId + ":" + seasonStartYear + ":" + type;
+        bool boom = StableRange(seed + ":boom-roll", 0, 99) < ProspectRiskConfig.ClampChance(boomChance);
+        bool bust = StableRange(seed + ":bust-roll", 0, 99) < ProspectRiskConfig.ClampChance(bustChance);
+
+        if (boom)
+        {
+            result.Delta += StableRange(seed + ":boom-delta", 2, 5);
+            result.Event = "Boom";
+        }
+        else if (bust)
+        {
+            result.Delta -= StableRange(seed + ":bust-delta", 2, 5);
+            result.Event = "Bust";
+        }
+
+        if (type == ProspectRiskConfig.DevelopmentTypeSafe)
+        {
+            result.Delta = ClampDelta(result.Delta, -2, 3);
+        }
+        else if (type == ProspectRiskConfig.DevelopmentTypeHighFloor)
+        {
+            if (overall < hiddenFloor && age <= 24)
+            {
+                result.Delta += 1;
+                if (result.Event == "Normal")
+                {
+                    result.Event = "HighFloorCatchUp";
+                }
+            }
+
+            if (hiddenCeiling - overall <= 2 && result.Delta > 1)
+            {
+                result.Delta = 1;
+            }
+        }
+        else if (type == ProspectRiskConfig.DevelopmentTypeRawTalent)
+        {
+            int variance = StableRange(seed + ":raw-variance", -2, 3);
+            result.Delta += variance;
+            if (variance != 0 && result.Event == "Normal")
+            {
+                result.Event = "RawTalentVariance";
+            }
+        }
+        else if (type == ProspectRiskConfig.DevelopmentTypeBoomBust)
+        {
+            int variance = StableRange(seed + ":boom-bust-variance", -3, 4);
+            result.Delta += variance;
+            if (variance != 0 && result.Event == "Normal")
+            {
+                result.Event = variance > 0 ? "Boom" : "Bust";
+            }
+        }
+        else if (type == ProspectRiskConfig.DevelopmentTypeLateBloomer)
+        {
+            if (age <= 21 && result.Delta > 0)
+            {
+                result.Delta -= 1;
+                if (result.Event == "Normal")
+                {
+                    result.Event = "LateBloomer";
+                }
+            }
+            else if (age >= 22 && age <= 25)
+            {
+                result.Delta += 1;
+                if (result.Event == "Normal")
+                {
+                    result.Event = "LateBloomer";
+                }
+            }
+        }
+
+        if (overall >= hiddenCeiling && result.Delta > 0)
+        {
+            result.Delta = 0;
+            result.Event = "CeilingLimited";
+        }
+        else if (overall + result.Delta > hiddenCeiling)
+        {
+            result.Delta = hiddenCeiling - overall;
+            result.Event = "CeilingLimited";
+        }
+
+        if (overall < hiddenFloor && age <= 24 && result.Delta < 1)
+        {
+            result.Delta = 1;
+            result.Event = "HighFloorCatchUp";
+        }
+
+        result.Delta = ClampDelta(result.Delta, PlayerDevelopmentConfig.MaxYearlyRegression, maxGrowth + 2);
+        return result;
+    }
+
+    private static int CalculateRiskAdjustedPotentialDelta(
+        int oldPotential,
+        int hiddenCeiling,
+        int hiddenFloor,
+        int age,
+        int basePotentialDelta,
+        string developmentEvent)
+    {
+        int delta = basePotentialDelta;
+        if (developmentEvent == "Boom" && oldPotential < hiddenCeiling)
+        {
+            delta += 1;
+        }
+        else if (developmentEvent == "Bust" && oldPotential > hiddenFloor)
+        {
+            delta -= 1;
+        }
+
+        if (oldPotential + delta > hiddenCeiling)
+        {
+            delta = hiddenCeiling - oldPotential;
+        }
+
+        if (oldPotential + delta < hiddenFloor && age <= 24)
+        {
+            delta = hiddenFloor - oldPotential;
+        }
+
+        return ClampDelta(delta, -1, 1);
+    }
+
+    private static string BuildDevelopmentReason(string baseReason, string developmentEvent)
+    {
+        if (string.IsNullOrEmpty(developmentEvent) || developmentEvent == "Normal")
+        {
+            return baseReason;
+        }
+
+        if (developmentEvent == "Boom")
+        {
+            return baseReason + " | Boom development";
+        }
+
+        if (developmentEvent == "Bust")
+        {
+            return baseReason + " | Bust development";
+        }
+
+        if (developmentEvent == "LateBloomer")
+        {
+            return baseReason + " | Late bloomer growth";
+        }
+
+        if (developmentEvent == "HighFloorCatchUp")
+        {
+            return baseReason + " | High floor progression";
+        }
+
+        if (developmentEvent == "CeilingLimited")
+        {
+            return baseReason + " | Ceiling limited";
+        }
+
+        if (developmentEvent == "MoraleBoost")
+        {
+            return baseReason + " | High morale boost";
+        }
+
+        if (developmentEvent == "MoraleDrag")
+        {
+            return baseReason + " | Low morale drag";
+        }
+
+        if (developmentEvent == "LeadershipBoost")
+        {
+            return baseReason + " | Leadership support";
+        }
+
+        if (developmentEvent == "StaffDevelopmentBoost")
+        {
+            return baseReason + " | Coaching staff development support";
+        }
+
+        if (developmentEvent == "StaffDevelopmentDrag")
+        {
+            return baseReason + " | Coaching staff development drag";
+        }
+
+        return baseReason + " | " + developmentEvent;
+    }
+
+    private static int CalculateMoraleDevelopmentModifier(PlayerData player, int seasonStartYear)
+    {
+        if (player == null)
+        {
+            return 0;
+        }
+
+        MoraleService.InitializePlayerMorale(player);
+        int roll = StableRange(player.Id + ":" + seasonStartYear + ":morale-development", 0, 99);
+        int modifier = 0;
+        if (player.Morale >= 80 && player.Age <= 25 && roll >= 88)
+        {
+            modifier += 1;
+        }
+
+        if (player.Morale < 35 && roll < 30)
+        {
+            modifier -= 1;
+        }
+
+        if (player.WantsTrade && roll < 45)
+        {
+            modifier -= 1;
+        }
+
+        return ClampDelta(modifier, -1, 1);
+    }
+
+    private static int CalculateLeadershipDevelopmentModifier(PlayerData player, int leadershipSupport, int seasonStartYear)
+    {
+        if (player == null || player.Age > 23 || leadershipSupport <= 0)
+        {
+            return 0;
+        }
+
+        int roll = StableRange(player.Id + ":" + seasonStartYear + ":leadership-development", 0, 99);
+        int threshold = leadershipSupport >= 2 ? 82 : 90;
+        return roll >= threshold ? 1 : 0;
+    }
+
+    private static int CalculateStaffDevelopmentModifier(TeamData team, PlayerData player, int seasonStartYear)
+    {
+        if (team == null || player == null)
+        {
+            return 0;
+        }
+
+        CoachingStaffService.EnsureStaffForTeam(team);
+        int staffModifier = player.Position == "G"
+            ? CoachingStaffService.GetGoalieDevelopmentModifier(team, player)
+            : CoachingStaffService.GetDevelopmentModifier(team, player);
+
+        if (staffModifier == 0)
+        {
+            return 0;
+        }
+
+        int roll = StableRange(player.Id + ":" + seasonStartYear + ":staff-development", 0, 99);
+        if (staffModifier > 0)
+        {
+            int threshold = player.Age <= 23 ? 80 : 93;
+            if (RosterStatusConfig.IsFarmRoster(player) && player.Age <= 23)
+            {
+                threshold -= 5;
+            }
+
+            if (player.DevelopmentType == ProspectRiskConfig.DevelopmentTypeRawTalent
+                || player.DevelopmentType == ProspectRiskConfig.DevelopmentTypeLateBloomer)
+            {
+                threshold -= 4;
+            }
+
+            return roll >= Mathf.Clamp(threshold - staffModifier * 2, 70, 96) ? 1 : 0;
+        }
+
+        int dragThreshold = staffModifier <= -2 ? 28 : 16;
+        return roll < dragThreshold ? -1 : 0;
+    }
+
+    private static string BuildStaffDevelopmentSummary(TeamData team, PlayerData player, int appliedModifier)
+    {
+        if (team == null || player == null)
+        {
+            return "";
+        }
+
+        int staffModifier = player.Position == "G"
+            ? CoachingStaffService.GetGoalieDevelopmentModifier(team, player)
+            : CoachingStaffService.GetDevelopmentModifier(team, player);
+        if (staffModifier == 0 && appliedModifier == 0)
+        {
+            return "Coaching staff 0";
+        }
+
+        string coachLabel = player.Position == "G" ? "Goalie Coach" : "Development Coach";
+        return coachLabel + " " + FormatSigned(staffModifier) + " | applied " + FormatSigned(appliedModifier);
+    }
+
+    private static PlayerData CreateProspectPlayerProxy(ProspectData prospect)
+    {
+        if (prospect == null)
+        {
+            return null;
+        }
+
+        return new PlayerData
+        {
+            Id = prospect.Id,
+            FirstName = prospect.FirstName,
+            LastName = prospect.LastName,
+            TeamId = prospect.DraftedByTeamId,
+            Position = prospect.Position,
+            Age = prospect.Age,
+            Overall = prospect.Overall,
+            Potential = prospect.Potential,
+            RosterStatus = RosterStatusConfig.Farm,
+            DevelopmentType = prospect.DevelopmentType
+        };
     }
 
     private static int CalculatePlayerDelta(PlayerData player, int seasonSeed)
@@ -325,7 +843,33 @@ public static class PlayerDevelopmentService
             delta = 0;
         }
 
+        delta = ApplyRosterStatusDevelopmentModifier(player, delta);
         return ClampDelta(delta, PlayerDevelopmentConfig.MaxYearlyRegression, PlayerDevelopmentConfig.MaxYearlyGrowth);
+    }
+
+    private static int ApplyRosterStatusDevelopmentModifier(PlayerData player, int delta)
+    {
+        if (player == null)
+        {
+            return delta;
+        }
+
+        if (RosterStatusConfig.IsFarmRoster(player) && player.Age <= PlayerDevelopmentConfig.YoungGrowthMaxAge && delta >= 0)
+        {
+            delta += 1;
+        }
+        else if (RosterStatusConfig.IsReserve(player) && delta > 0)
+        {
+            delta -= 1;
+        }
+
+        if ((RosterStatusConfig.IsFarmRoster(player) || RosterStatusConfig.IsReserve(player))
+            && player.Age >= PlayerDevelopmentConfig.VeteranRegressionStartAge)
+        {
+            delta -= RosterStatusConfig.IsReserve(player) ? 2 : 1;
+        }
+
+        return delta;
     }
 
     private static int CalculateProspectDelta(ProspectData prospect, int seasonSeed)
@@ -492,6 +1036,16 @@ public static class PlayerDevelopmentService
         int oldPotential,
         int newPotential,
         string developmentType,
+        string developmentEvent,
+        int hiddenCeilingAtTime,
+        int hiddenFloorAtTime,
+        int developmentRiskAtTime,
+        int moraleAtTime,
+        int moraleDevelopmentModifier,
+        int leadershipSupportAtTime,
+        int leadershipDevelopmentModifier,
+        int staffDevelopmentModifier,
+        string staffDevelopmentSummary,
         string reason)
     {
         return new PlayerDevelopmentChangeData
@@ -513,9 +1067,24 @@ public static class PlayerDevelopmentService
             NewPotential = newPotential,
             PotentialDelta = newPotential - oldPotential,
             DevelopmentType = developmentType,
+            DevelopmentEvent = string.IsNullOrEmpty(developmentEvent) ? "Normal" : developmentEvent,
+            HiddenCeilingAtTime = hiddenCeilingAtTime,
+            HiddenFloorAtTime = hiddenFloorAtTime,
+            DevelopmentRiskAtTime = developmentRiskAtTime,
+            MoraleAtTime = moraleAtTime,
+            MoraleDevelopmentModifier = moraleDevelopmentModifier,
+            LeadershipSupportAtTime = leadershipSupportAtTime,
+            LeadershipDevelopmentModifier = leadershipDevelopmentModifier,
+            StaffDevelopmentModifier = staffDevelopmentModifier,
+            StaffDevelopmentSummary = staffDevelopmentSummary,
             Reason = reason,
             CreatedAtUtc = DateTime.UtcNow.ToString("o")
         };
+    }
+
+    private static string FormatSigned(int value)
+    {
+        return value > 0 ? "+" + value : value.ToString();
     }
 
     private static void AddChange(GameState state, PlayerDevelopmentChangeData change)
@@ -527,6 +1096,46 @@ public static class PlayerDevelopmentService
 
         EnsureDevelopmentHistory(state);
         state.PlayerDevelopmentHistory.Changes.Add(change);
+        TeamData team = FindTeamById(state, change.TeamId);
+        PlayerData player = FindPlayerById(team, change.PlayerId);
+        EventNewsService.CreateDevelopmentBreakoutNews(state, team, player, change.OverallDelta);
+    }
+
+    private static TeamData FindTeamById(GameState state, string teamId)
+    {
+        if (state == null || state.Teams == null || string.IsNullOrEmpty(teamId))
+        {
+            return null;
+        }
+
+        foreach (TeamData team in state.Teams)
+        {
+            if (team != null && team.Id == teamId)
+            {
+                return team;
+            }
+        }
+
+        return null;
+    }
+
+    private static PlayerData FindPlayerById(TeamData team, string playerId)
+    {
+        if (team == null || string.IsNullOrEmpty(playerId))
+        {
+            return null;
+        }
+
+        team.EnsurePlayers();
+        foreach (PlayerData player in team.Players)
+        {
+            if (player != null && player.Id == playerId)
+            {
+                return player;
+            }
+        }
+
+        return null;
     }
 
     private static bool IsAlreadyProcessed(string entityType, string id)
@@ -604,6 +1213,6 @@ public static class PlayerDevelopmentService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

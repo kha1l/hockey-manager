@@ -19,9 +19,11 @@ public class PenaltyKillUnitRowView : MonoBehaviour
         }
 
         List<PlayerData> players = GetPlayers(unit, team);
+        LineChemistryData chemistry = ChemistryService.CalculatePenaltyKillChemistry(team, unit);
         _infoText.text = "PK" + (unit == null ? 0 : unit.UnitNumber)
             + " | " + FormatPlayers(players)
-            + " | AVG " + AverageOverall(players);
+            + " | AVG " + AverageOverall(players)
+            + " | CHEM " + chemistry.ChemistryScore + " " + chemistry.ChemistryLabel;
     }
 
     private static List<PlayerData> GetPlayers(PenaltyKillUnitData unit, TeamData team)

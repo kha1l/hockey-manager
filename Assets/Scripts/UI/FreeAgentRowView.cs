@@ -1,4 +1,3 @@
-using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,16 +17,9 @@ public class FreeAgentRowView : MonoBehaviour
 
     public void Initialize(PlayerData player, GameScreenController screenController)
     {
-        _playerId = player.Id;
+        _playerId = player == null ? "" : player.Id;
         _screenController = screenController;
-        _infoText.text = player.FirstName + " " + player.LastName
-            + " | " + player.Position
-            + " | " + player.Age
-            + " лет | OVR " + player.Overall
-            + " | POT " + player.Potential
-            + " | $" + FormatMoney(player.Salary)
-            + " | " + player.ContractYearsRemaining + " г."
-            + " | " + player.ContractStatus;
+        _infoText.text = PlayerDisplayFormatter.FormatFreeAgent(player);
 
         _button.onClick.RemoveAllListeners();
         _button.onClick.AddListener(OnClicked);
@@ -41,8 +33,4 @@ public class FreeAgentRowView : MonoBehaviour
         }
     }
 
-    private static string FormatMoney(int value)
-    {
-        return value.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
-    }
 }

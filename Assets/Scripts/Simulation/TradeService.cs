@@ -56,12 +56,39 @@ public static class TradeService
         EnsureTeamPlayers(userTeam);
         EnsureTeamPlayers(otherTeam);
 
-        assetsFromUserTeam = NormalizeAssets(assetsFromUserTeam);
-        assetsFromOtherTeam = NormalizeAssets(assetsFromOtherTeam);
+        assetsFromUserTeam = NormalizeAssets(assetsFromUserTeam, state);
+        assetsFromOtherTeam = NormalizeAssets(assetsFromOtherTeam, state);
         proposal = CreateProposal(userTeam, otherTeam, assetsFromUserTeam, assetsFromOtherTeam);
 
         if (!ValidateTradeWithAssets(state, userTeam, assetsFromUserTeam, otherTeam, assetsFromOtherTeam, out message))
         {
+            proposal.Status = "Rejected";
+            proposal.RejectionReason = message;
+            AddProposalToHistory(state, proposal);
+            return false;
+        }
+
+        proposal.UserTeamEvaluation = TradeFitEvaluator.EvaluateTradeForTeam(
+            state,
+            userTeam,
+            assetsFromOtherTeam,
+            assetsFromUserTeam);
+
+        bool cpuAccepted = TradeAiService.ShouldCpuAcceptTrade(
+            state,
+            otherTeam,
+            assetsFromUserTeam,
+            assetsFromOtherTeam,
+            out TradeFitEvaluationData otherTeamEvaluation);
+        proposal.OtherTeamEvaluation = otherTeamEvaluation;
+        proposal.AiAcceptanceScore = otherTeamEvaluation == null ? 0 : otherTeamEvaluation.FinalScore;
+        proposal.AiDecisionReason = otherTeamEvaluation == null ? "" : otherTeamEvaluation.Reason;
+
+        if (!cpuAccepted)
+        {
+            message = string.IsNullOrEmpty(proposal.AiDecisionReason)
+                ? "CPU отклонил обмен"
+                : proposal.AiDecisionReason;
             proposal.Status = "Rejected";
             proposal.RejectionReason = message;
             AddProposalToHistory(state, proposal);
@@ -79,6 +106,9 @@ public static class TradeService
 
         proposal.Status = "Accepted";
         proposal.RejectionReason = "";
+        proposal.AiDecisionReason = string.IsNullOrEmpty(proposal.AiDecisionReason)
+            ? "Accepted"
+            : proposal.AiDecisionReason;
         AddProposalToHistory(state, proposal);
 
         message = "Обмен принят";
@@ -88,6 +118,7 @@ public static class TradeService
         }
 
         AppendFloorWarnings(userTeam, otherTeam, ref message);
+        TeamTradeProfileService.EnsureTradeProfiles(state);
         return true;
     }
 
@@ -108,7 +139,7 @@ public static class TradeService
 
     public static TradeAssetData CreatePlayerAsset(PlayerData player, TeamData team)
     {
-        if (player == null)
+        if (player == null || player.IsRetired)
         {
             return null;
         }
@@ -130,9 +161,11 @@ public static class TradeService
             Position = player.Position,
             Age = player.Age,
             Overall = player.Overall,
+            Potential = player.Potential,
             Salary = player.Salary,
             ContractYearsRemaining = player.ContractYearsRemaining,
             HasNoTradeClause = player.HasNoTradeClause,
+            RosterStatus = string.IsNullOrEmpty(player.RosterStatus) ? RosterStatusConfig.NHL : player.RosterStatus,
             RetainedSalaryPercent = 0
         };
 
@@ -162,6 +195,7 @@ public static class TradeService
             Position = "",
             Age = 0,
             Overall = 0,
+            Potential = 0,
             Salary = 0,
             ContractYearsRemaining = 0,
             HasNoTradeClause = false,
@@ -234,13 +268,6 @@ public static class TradeService
             return false;
         }
 
-        if (!ValidateRosterSize(state, userTeam, assetsFromUserTeam, assetsFromOtherTeam)
-            || !ValidateRosterSize(state, otherTeam, assetsFromOtherTeam, assetsFromUserTeam))
-        {
-            message = "Размер состава после обмена вне допустимых лимитов";
-            return false;
-        }
-
         int salaryCapUpperLimit = GetSalaryCapUpperLimit(state);
         int userPayrollAfter = CalculatePayrollAfterAssetTrade(userTeam, assetsFromUserTeam, assetsFromOtherTeam);
         int otherPayrollAfter = CalculatePayrollAfterAssetTrade(otherTeam, assetsFromOtherTeam, assetsFromUserTeam);
@@ -257,8 +284,8 @@ public static class TradeService
             return false;
         }
 
-        int userValue = TradeValueCalculator.CalculateAssetsValue(assetsFromUserTeam);
-        int otherValue = TradeValueCalculator.CalculateAssetsValue(assetsFromOtherTeam);
+        int userValue = TradeValueCalculator.CalculateAssetsValue(assetsFromUserTeam, state);
+        int otherValue = TradeValueCalculator.CalculateAssetsValue(assetsFromOtherTeam, state);
         int valueDifference = Math.Abs(userValue - otherValue);
         message = valueDifference > 500
             ? "Обмен возможен, но ценность активов сильно отличается"
@@ -272,9 +299,22 @@ public static class TradeService
         {
             if (asset.AssetType == "Player")
             {
-                if (FindPlayer(team, asset.PlayerId) == null)
+                PlayerData player = FindPlayer(team, asset.PlayerId);
+                if (player == null)
                 {
                     message = "Игрок не принадлежит команде";
+                    return false;
+                }
+
+                if (player.IsRetired)
+                {
+                    message = "Игрок завершил карьеру";
+                    return false;
+                }
+
+                if (player.IsOnWaivers)
+                {
+                    message = "Игрок находится на waivers";
                     return false;
                 }
             }
@@ -379,9 +419,42 @@ public static class TradeService
         List<TradeAssetData> outgoingAssets,
         List<TradeAssetData> incomingAssets)
     {
-        return SalaryCapService.CalculatePayroll(team)
-            - SumPlayerSalary(outgoingAssets)
-            + SumPlayerSalary(incomingAssets);
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
+        int payroll = SalaryCapService.CalculatePayroll(team);
+        int nhlCount = TeamRosterService.GetNhlPlayers(team).Count;
+
+        foreach (TradeAssetData asset in outgoingAssets)
+        {
+            if (asset.AssetType != "Player")
+            {
+                continue;
+            }
+
+            PlayerData player = FindPlayer(team, asset.PlayerId);
+            if (RosterStatusConfig.IsNhlRoster(player))
+            {
+                payroll -= player.Salary;
+                nhlCount--;
+            }
+        }
+
+        foreach (TradeAssetData asset in incomingAssets)
+        {
+            if (asset.AssetType != "Player")
+            {
+                continue;
+            }
+
+            bool incomingWouldStayNhl = asset.RosterStatus == RosterStatusConfig.NHL
+                && nhlCount < RosterStatusConfig.MaxNhlRosterSize;
+            if (incomingWouldStayNhl)
+            {
+                payroll += asset.Salary;
+                nhlCount++;
+            }
+        }
+
+        return payroll;
     }
 
     private static void ApplyPlayerTransfers(TeamData fromTeam, TeamData toTeam, List<TradeAssetData> assets)
@@ -399,9 +472,35 @@ public static class TradeService
                 continue;
             }
 
+            TeamRosterService.EnsureRosterStatusesForTeam(fromTeam);
+            TeamRosterService.EnsureRosterStatusesForTeam(toTeam);
+            if (player.IsCaptain || player.IsAlternateCaptain)
+            {
+                LeadershipService.ClearCaptaincy(fromTeam, player.Id);
+            }
+
+            string originalRosterStatus = string.IsNullOrEmpty(player.RosterStatus)
+                ? RosterStatusConfig.NHL
+                : player.RosterStatus;
+            int toNhlCount = TeamRosterService.GetNhlPlayers(toTeam).Count;
+
             fromTeam.Players.Remove(player);
+            LeadershipService.ClearPlayerCaptaincy(player);
             player.TeamId = toTeam.Id;
+            player.PreviousRosterStatus = originalRosterStatus;
+            player.RosterStatus = originalRosterStatus == RosterStatusConfig.NHL && toNhlCount >= RosterStatusConfig.MaxNhlRosterSize
+                ? RosterStatusConfig.Farm
+                : originalRosterStatus;
+            player.RosterStatusUpdatedAtUtc = DateTime.UtcNow.ToString("o");
+            player.IsOnWaivers = false;
+            player.WaiverStatus = WaiverConfig.WaiverStatusNone;
+            player.WaiverIntendedDestination = "";
+            WaiverEligibilityService.EnsureWaiverEligibility(player);
             toTeam.Players.Add(player);
+            LineupService.SyncScratchPlayers(fromTeam);
+            LineupService.SyncScratchPlayers(toTeam);
+            LineupService.ValidateLineup(fromTeam, out string fromLineupMessage);
+            LineupService.ValidateLineup(toTeam, out string toLineupMessage);
         }
     }
 
@@ -423,7 +522,7 @@ public static class TradeService
         }
     }
 
-    private static List<TradeAssetData> NormalizeAssets(List<TradeAssetData> assets)
+    private static List<TradeAssetData> NormalizeAssets(List<TradeAssetData> assets, GameState state)
     {
         List<TradeAssetData> normalized = new List<TradeAssetData>();
         if (assets == null)
@@ -435,7 +534,7 @@ public static class TradeService
         {
             if (asset != null && !string.IsNullOrEmpty(asset.AssetType))
             {
-                asset.EstimatedTradeValue = TradeValueCalculator.CalculateAssetValue(asset);
+                asset.EstimatedTradeValue = TradeValueCalculator.CalculateAssetValue(asset, state);
                 normalized.Add(asset);
             }
         }
@@ -587,6 +686,7 @@ public static class TradeService
         }
 
         ContractGenerator.EnsureContractsForTeam(team);
+        TeamRosterService.EnsureRosterStatusesForTeam(team);
     }
 
     private static int GetSalaryCapUpperLimit(GameState state)
@@ -612,6 +712,6 @@ public static class TradeService
 
     private static string GetTeamName(TeamData team)
     {
-        return team == null ? "" : team.City + " " + team.Name;
+        return TeamIdentityService.GetDisplayName(team);
     }
 }

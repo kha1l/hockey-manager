@@ -83,6 +83,11 @@ public static class TacticsService
         return Mathf.Clamp(modifier, 0.75f, 1.35f);
     }
 
+    public static int GetTacticalFitModifier(TeamData team)
+    {
+        return CoachingStaffService.GetTacticalFitModifier(team);
+    }
+
     private static TeamTacticsData GetTactics(TeamData team)
     {
         EnsureTactics(team);

@@ -29,11 +29,13 @@ public class DefensePairRowView : MonoBehaviour
         PlayerData right = FindPlayer(team, pair.RightDefensePlayerId);
         AddPlayer(players, left);
         AddPlayer(players, right);
+        LineChemistryData chemistry = ChemistryService.CalculateDefensePairChemistry(team, pair);
 
         _infoText.text = "Пара " + pair.PairNumber
             + " | LD: " + FormatPlayer(left)
             + " | RD: " + FormatPlayer(right)
-            + " | AVG " + AverageEffectiveOverall(players);
+            + " | AVG " + AverageEffectiveOverall(players)
+            + " | CHEM " + chemistry.ChemistryScore + " " + chemistry.ChemistryLabel;
     }
 
     private static string FormatPlayer(PlayerData player)
@@ -46,10 +48,13 @@ public class DefensePairRowView : MonoBehaviour
         PlayerFatigueService.EnsureFatigueFields(player);
         InjuryService.EnsureInjuryFields(player);
         PlayerRoleService.EnsureRole(player);
+        MoraleService.InitializePlayerMorale(player);
         return player.FirstName + " " + player.LastName
             + " (" + player.Position
             + " OVR " + player.Overall
             + " EFF " + PlayerFatigueService.GetEffectiveOverall(player)
+            + " MOR " + player.Morale
+            + FormatMoraleConcern(player)
             + " " + player.PlayerRole
             + " TOI " + IceTimeConfig.FormatSeconds(player.EstimatedTimeOnIceSeconds)
             + " COND " + player.Condition
@@ -85,6 +90,14 @@ public class DefensePairRowView : MonoBehaviour
         {
             players.Add(player);
         }
+    }
+
+    private static string FormatMoraleConcern(PlayerData player)
+    {
+        return player != null
+            && (player.MoraleStatus == MoraleConfig.StatusUnhappy || player.MoraleStatus == MoraleConfig.StatusVeryUnhappy)
+                ? " " + player.MoraleStatus
+                : "";
     }
 
     private static PlayerData FindPlayer(TeamData team, string playerId)
