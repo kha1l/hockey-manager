@@ -12,11 +12,13 @@ public class PreGameSetupData
     public string HomeLogoResourcePath;
     public string HomeJerseyResourcePath;
     public string HomeFullBodyResourcePath;
+    public string HomePreviewStatsText;
     public string AwayTeamId;
     public string AwayTeamName;
     public string AwayLogoResourcePath;
     public string AwayJerseyResourcePath;
     public string AwayFullBodyResourcePath;
+    public string AwayPreviewStatsText;
     public string UserTeamId;
     public string UserTeamName;
     public bool IsUserHomeTeam;

@@ -133,15 +133,41 @@ public static class LiveMatchGoalieService
 
         if (diff == -3)
         {
-            return match.PeriodSecondsRemaining <= LiveMatchConfig.ThreeGoalPullGoalieSeconds;
+            return match.PeriodSecondsRemaining <= GetStablePullThresholdSeconds(
+                match,
+                team,
+                3,
+                LiveMatchConfig.ThreeGoalPullGoalieMinSeconds,
+                LiveMatchConfig.ThreeGoalPullGoalieMaxSeconds);
         }
 
         if (diff == -2)
         {
-            return match.PeriodSecondsRemaining <= LiveMatchConfig.TwoGoalPullGoalieSeconds;
+            return match.PeriodSecondsRemaining <= GetStablePullThresholdSeconds(
+                match,
+                team,
+                2,
+                LiveMatchConfig.TwoGoalPullGoalieMinSeconds,
+                LiveMatchConfig.TwoGoalPullGoalieMaxSeconds);
         }
 
-        return match.PeriodSecondsRemaining <= LiveMatchConfig.OneGoalPullGoalieSeconds;
+        return match.PeriodSecondsRemaining <= GetStablePullThresholdSeconds(
+            match,
+            team,
+            1,
+            LiveMatchConfig.OneGoalPullGoalieMinSeconds,
+            LiveMatchConfig.OneGoalPullGoalieMaxSeconds);
+    }
+
+    public static bool ShouldAutoReturnGoalie(LiveMatchStateData match, TeamData team)
+    {
+        LiveMatchTeamStatsData stats = GetStats(match, team);
+        if (match == null || team == null || stats == null || !stats.IsGoaliePulled || match.IsCompleted)
+        {
+            return false;
+        }
+
+        return GetScoreDiff(match, team) >= 0;
     }
 
     private static bool CanPullGoalie(LiveMatchStateData match, TeamData team, out string message)
@@ -209,6 +235,50 @@ public static class LiveMatchGoalieService
         }
 
         return match.AwayScore - match.HomeScore;
+    }
+
+    private static int GetStablePullThresholdSeconds(
+        LiveMatchStateData match,
+        TeamData team,
+        int deficit,
+        int minSeconds,
+        int maxSeconds)
+    {
+        if (maxSeconds < minSeconds)
+        {
+            int swap = maxSeconds;
+            maxSeconds = minSeconds;
+            minSeconds = swap;
+        }
+
+        int range = maxSeconds - minSeconds + 1;
+        string key = (match == null ? "" : match.LiveMatchId)
+            + ":"
+            + (team == null ? "" : team.Id)
+            + ":pull:"
+            + deficit;
+        return minSeconds + StableRange(key, range);
+    }
+
+    private static int StableRange(string key, int range)
+    {
+        if (range <= 1)
+        {
+            return 0;
+        }
+
+        unchecked
+        {
+            uint hash = 2166136261u;
+            string source = string.IsNullOrEmpty(key) ? "goalie-pull" : key;
+            for (int i = 0; i < source.Length; i++)
+            {
+                hash ^= source[i];
+                hash *= 16777619u;
+            }
+
+            return (int)(hash % (uint)range);
+        }
     }
 
     private static LiveMatchTeamStatsData GetStats(LiveMatchStateData match, TeamData team)

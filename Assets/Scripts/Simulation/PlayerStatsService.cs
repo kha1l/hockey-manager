@@ -181,7 +181,30 @@ public static class PlayerStatsService
 
     private static int CompareGoalies(PlayerSeasonStatsData left, PlayerSeasonStatsData right)
     {
+        float rightSavePercentage = GetSavePercentage(right);
+        float leftSavePercentage = GetSavePercentage(left);
+        int saveComparison = rightSavePercentage.CompareTo(leftSavePercentage);
+        if (saveComparison != 0)
+        {
+            return saveComparison;
+        }
+
         int winsComparison = right.GoalieWins.CompareTo(left.GoalieWins);
-        return winsComparison != 0 ? winsComparison : right.Saves.CompareTo(left.Saves);
+        if (winsComparison != 0)
+        {
+            return winsComparison;
+        }
+
+        return GetGoalsAgainstAverage(left).CompareTo(GetGoalsAgainstAverage(right));
+    }
+
+    private static float GetSavePercentage(PlayerSeasonStatsData stats)
+    {
+        return stats == null || stats.ShotsAgainst <= 0 ? 0f : stats.Saves / (float)stats.ShotsAgainst;
+    }
+
+    private static float GetGoalsAgainstAverage(PlayerSeasonStatsData stats)
+    {
+        return stats == null || stats.GoalieGamesPlayed <= 0 ? 99f : stats.GoalsAgainst / (float)stats.GoalieGamesPlayed;
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -24,6 +25,16 @@ public static class SaveLoadService
 
     public static void Save(GameState gameState)
     {
+        Save(gameState, true);
+    }
+
+    public static void SaveFast(GameState gameState)
+    {
+        Save(gameState, false);
+    }
+
+    public static void Save(GameState gameState, bool createBackup)
+    {
         if (gameState == null)
         {
             Debug.LogWarning("SaveLoadService: gameState is null, сохранение отменено.");
@@ -36,9 +47,22 @@ public static class SaveLoadService
             gameState.SaveVersion = SaveMigrationConfig.CurrentSaveVersion;
             gameState.LastSavedUtc = DateTime.UtcNow.ToString("o");
             gameState.EnsureAndroidPerformanceData();
-            CreateBackupIfPossible();
-            string json = JsonUtility.ToJson(gameState, false);
-            File.WriteAllText(SavePath, json);
+            if (createBackup)
+            {
+                CreateBackupIfPossible();
+            }
+
+            SaveCompactionScope compactionScope = SaveCompactionScope.Apply(gameState);
+            try
+            {
+                string json = JsonUtility.ToJson(gameState, false);
+                File.WriteAllText(SavePath, json);
+            }
+            finally
+            {
+                compactionScope.Restore();
+            }
+
             stopwatch.Stop();
             PerformanceTimerService.RecordSave(gameState, stopwatch.ElapsedMilliseconds);
 
@@ -117,6 +141,126 @@ public static class SaveLoadService
         catch (Exception exception)
         {
             Debug.LogWarning("Не удалось создать backup сохранения: " + exception.Message);
+        }
+    }
+
+    private sealed class SaveCompactionScope
+    {
+        private readonly List<CompactedResult> _compactedResults = new List<CompactedResult>();
+
+        public static SaveCompactionScope Apply(GameState state)
+        {
+            SaveCompactionScope scope = new SaveCompactionScope();
+            scope.Compact(state);
+            return scope;
+        }
+
+        public void Restore()
+        {
+            for (int i = 0; i < _compactedResults.Count; i++)
+            {
+                CompactedResult compacted = _compactedResults[i];
+                if (compacted.Result == null)
+                {
+                    continue;
+                }
+
+                compacted.Result.PlayerStats = compacted.PlayerStats;
+                compacted.Result.Events = compacted.Events;
+            }
+
+            _compactedResults.Clear();
+        }
+
+        private void Compact(GameState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            HashSet<MatchResultData> seenResults = new HashSet<MatchResultData>();
+            CompactResult(state.LastMatchResult, seenResults);
+            CompactResults(state.MatchHistory, seenResults);
+
+            SeasonData season = state.Season;
+            if (season == null)
+            {
+                return;
+            }
+
+            if (season.Schedule != null)
+            {
+                foreach (ScheduleGameData game in season.Schedule)
+                {
+                    if (game != null)
+                    {
+                        CompactResult(game.Result, seenResults);
+                    }
+                }
+            }
+
+            PlayoffData playoffs = season.Playoffs;
+            if (playoffs == null || playoffs.Rounds == null)
+            {
+                return;
+            }
+
+            foreach (PlayoffRoundData round in playoffs.Rounds)
+            {
+                if (round == null || round.Series == null)
+                {
+                    continue;
+                }
+
+                foreach (PlayoffSeriesData series in round.Series)
+                {
+                    if (series != null)
+                    {
+                        CompactResults(series.Games, seenResults);
+                    }
+                }
+            }
+        }
+
+        private void CompactResults(List<MatchResultData> results, HashSet<MatchResultData> seenResults)
+        {
+            if (results == null)
+            {
+                return;
+            }
+
+            foreach (MatchResultData result in results)
+            {
+                CompactResult(result, seenResults);
+            }
+        }
+
+        private void CompactResult(MatchResultData result, HashSet<MatchResultData> seenResults)
+        {
+            if (result == null || seenResults == null || !seenResults.Add(result))
+            {
+                return;
+            }
+
+            List<PlayerGameStatData> playerStats = result.PlayerStats;
+            List<LiveMatchEventData> events = result.Events;
+            _compactedResults.Add(new CompactedResult
+            {
+                Result = result,
+                PlayerStats = playerStats,
+                Events = events
+            });
+
+            result.PlayerStats = new List<PlayerGameStatData>();
+            result.Events = new List<LiveMatchEventData>();
+        }
+
+        private struct CompactedResult
+        {
+            public MatchResultData Result;
+            public List<PlayerGameStatData> PlayerStats;
+            public List<LiveMatchEventData> Events;
         }
     }
 }

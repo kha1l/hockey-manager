@@ -71,7 +71,7 @@ public class PlayerStatsController : MonoBehaviour
         }
 
         PlayerStatsRowView skaterHeader = CreateRow("skater-header-row");
-        skaterHeader.InitializeMessage("Полевые: # Игрок | Поз | И | Г | П | О | ATOI | PPP | PIM | Бр | +/-");
+        skaterHeader.InitializeMessage("Полевые: # Игрок [Ком] | Поз | И | Г | П | О | ATOI | PPP | PIM | +/-");
 
         foreach (PlayerSeasonStatsData stats in skaters)
         {
@@ -80,7 +80,7 @@ public class PlayerStatsController : MonoBehaviour
         }
 
         PlayerStatsRowView goalieHeader = CreateRow("goalie-header-row");
-        goalieHeader.InitializeMessage("Вратари: # Игрок | И | В | П | ОТП | ATOI | Сэйвы | ПШ | SO");
+        goalieHeader.InitializeMessage("Вратари: # Игрок [Ком] | И | В | П | ОТП | ATOI | SV% | GAA | SO");
 
         foreach (PlayerSeasonStatsData stats in goalies)
         {
@@ -116,10 +116,10 @@ public class PlayerStatsController : MonoBehaviour
 
         skaters.Sort(CompareSkaters);
         string title = mode == ModeDefensemen
-            ? "Top 10 defensemen: # Player | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-"
+            ? "Top 10 defensemen: # Player [Team] | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | +/-"
             : mode == ModeUnder21
-                ? "Top 10 U21 players: # Player | Age | Pos | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-"
-                : "Top 10 forwards: # Player | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | Shots | +/-";
+                ? "Top 10 U21 players: # Player [Team] | Age | Pos | GP | G | A | P | ATOI | PPP | PIM | +/-"
+                : "Top 10 forwards: # Player [Team] | Pos | Age | GP | G | A | P | ATOI | PPP | PIM | +/-";
         PlayerStatsRowView header = CreateRow("league-skater-header-row");
         header.InitializeMessage(title);
 
@@ -155,7 +155,7 @@ public class PlayerStatsController : MonoBehaviour
 
         goalies.Sort(CompareGoalies);
         PlayerStatsRowView header = CreateRow("league-goalie-header-row");
-        header.InitializeMessage("Top 10 goalies: # Player | Age | GP | W | L | OTL | ATOI | Saves | GA | SO");
+        header.InitializeMessage("Top 10 goalies: # Player [Team] | Age | GP | W | L | OTL | ATOI | SV% | GAA | SO");
 
         int count = Mathf.Min(10, goalies.Count);
         for (int i = 0; i < count; i++)

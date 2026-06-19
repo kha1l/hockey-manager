@@ -654,6 +654,12 @@ public static class GameStateRepairService
             changed = true;
         }
 
+        if (IsAlekseyKharlanov(player) && player.Nationality != "Russia")
+        {
+            player.Nationality = "Russia";
+            changed = true;
+        }
+
         if (!IsValidPosition(player.Position))
         {
             player.Position = "C";
@@ -702,6 +708,21 @@ public static class GameStateRepairService
         }
 
         return changed;
+    }
+
+    private static bool IsAlekseyKharlanov(PlayerData player)
+    {
+        if (player == null)
+        {
+            return false;
+        }
+
+        if (player.Id == "belgorod_lions-aleksey-kharlanov")
+        {
+            return true;
+        }
+
+        return player.FirstName == "Aleksey" && player.LastName == "Kharlanov";
     }
 
     private static bool ClampField(ref int field, int value, int min, int max)

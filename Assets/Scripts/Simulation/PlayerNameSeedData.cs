@@ -16,73 +16,85 @@ public static class PlayerNameSeedData
     private static readonly string[] RussianFirstNames =
     {
         "Ivan", "Dmitry", "Alexander", "Sergey", "Mikhail", "Nikita", "Artem", "Maxim",
-        "Kirill", "Ilya", "Yegor", "Pavel", "Roman", "Denis", "Vladislav", "Andrei"
+        "Kirill", "Ilya", "Yegor", "Pavel", "Roman", "Denis", "Vladislav", "Andrei",
+        "Aleksey", "Matvey", "Danila", "Nikolay", "Ruslan", "Timur", "Oleg", "Gleb"
     };
 
     private static readonly string[] RussianLastNames =
     {
         "Sokolov", "Kuznetsov", "Morozov", "Volkov", "Orlov", "Fedorov", "Makarov", "Novikov",
-        "Karpov", "Belyaev", "Zaitsev", "Gusev", "Antonov", "Tikhonov", "Borisov", "Egorov"
+        "Karpov", "Belyaev", "Zaitsev", "Gusev", "Antonov", "Tikhonov", "Borisov", "Egorov",
+        "Kharlanov", "Savin", "Vorobyov", "Panarin", "Kiselev", "Larin", "Sorokin", "Danilov"
     };
 
     private static readonly string[] BelarusianFirstNames =
     {
         "Aleksei", "Viktor", "Daniil", "Yuri", "Nikolai", "Anton", "Matvei", "Arseny",
-        "Vlad", "Timofei", "Stepan", "Gleb", "Ruslan", "Semyon", "Vadim", "Mark"
+        "Vlad", "Timofei", "Stepan", "Gleb", "Ruslan", "Semyon", "Vadim", "Mark",
+        "Kiryl", "Maksim", "Ihar", "Pavel", "Mikita", "Artyom", "Roman", "Andrei"
     };
 
     private static readonly string[] BelarusianLastNames =
     {
         "Kovalchuk", "Novitski", "Bondarenko", "Melnikov", "Savitski", "Kravchenko", "Lapko", "Yurchenko",
-        "Zhuk", "Sidorov", "Klimovich", "Baranov", "Kozlov", "Pavlovich", "Fedotov", "Mironov"
+        "Zhuk", "Sidorov", "Klimovich", "Baranov", "Kozlov", "Pavlovich", "Fedotov", "Mironov",
+        "Hrabouski", "Martsinovich", "Kazakevich", "Radkevich", "Yankovski", "Sokol", "Levitski", "Karpuk"
     };
 
     private static readonly string[] CanadianFirstNames =
     {
         "Connor", "Ryan", "Tyler", "Brayden", "Logan", "Carter", "Dylan", "Mason",
-        "Owen", "Cole", "Nathan", "Ethan", "Caleb", "Liam", "Jake", "Wyatt"
+        "Owen", "Cole", "Nathan", "Ethan", "Caleb", "Liam", "Jake", "Wyatt",
+        "Matthew", "Adam", "Jordan", "Brett", "Evan", "Nolan", "Spencer", "Hayden"
     };
 
     private static readonly string[] CanadianLastNames =
     {
         "McLeod", "Campbell", "Bennett", "Harrison", "Fraser", "Walsh", "Morrison", "Gauthier",
-        "Lavoie", "Ducharme", "Roy", "Bouchard", "Anderson", "Thompson", "Cameron", "MacDonald"
+        "Lavoie", "Ducharme", "Roy", "Bouchard", "Anderson", "Thompson", "Cameron", "MacDonald",
+        "Ouellet", "Tremblay", "Gallagher", "Mercier", "Bergeron", "Fournier", "Leblanc", "Gagnon"
     };
 
     private static readonly string[] UsaFirstNames =
     {
         "Jack", "Luke", "Cole", "Austin", "Trevor", "Chase", "Blake", "Noah",
-        "Hunter", "Grant", "Evan", "Cooper", "Gavin", "Parker", "Brady", "Miles"
+        "Hunter", "Grant", "Evan", "Cooper", "Gavin", "Parker", "Brady", "Miles",
+        "Logan", "Drew", "Camden", "Sawyer", "Wesley", "Hudson", "Riley", "Zach"
     };
 
     private static readonly string[] UsaLastNames =
     {
         "Miller", "Johnson", "Parker", "Hayes", "Nelson", "Brooks", "Carter", "Reed",
-        "Foster", "Bishop", "Hughes", "Baker", "Collins", "Turner", "Morgan", "Price"
+        "Foster", "Bishop", "Hughes", "Baker", "Collins", "Turner", "Morgan", "Price",
+        "Winters", "Bennett", "Sullivan", "Hart", "Coleman", "Griffin", "Pierce", "Wright"
     };
 
     private static readonly string[] FinnishFirstNames =
     {
         "Mikko", "Antti", "Eetu", "Joonas", "Oskari", "Ville", "Aleksi", "Juho",
-        "Sami", "Teemu", "Rasmus", "Lauri", "Kasper", "Matias", "Niko", "Patrik"
+        "Sami", "Teemu", "Rasmus", "Lauri", "Kasper", "Matias", "Niko", "Patrik",
+        "Aatu", "Jere", "Miro", "Topi", "Kalle", "Julius", "Eemil", "Otto"
     };
 
     private static readonly string[] FinnishLastNames =
     {
         "Korhonen", "Virtanen", "Laine", "Nieminen", "Salonen", "Hakala", "Lehtinen", "Koskinen",
-        "Miettinen", "Heiskanen", "Aaltonen", "Rantala", "Jokinen", "Kapanen", "Vatanen", "Lindholm"
+        "Miettinen", "Heiskanen", "Aaltonen", "Rantala", "Jokinen", "Kapanen", "Vatanen", "Lindholm",
+        "Pulkkinen", "Rissanen", "Leinonen", "Hartikainen", "Karjalainen", "Rautiainen", "Saarinen", "Kivela"
     };
 
     private static readonly string[] SwedishFirstNames =
     {
         "Erik", "Lucas", "Oscar", "William", "Filip", "Anton", "Axel", "Elias",
-        "Viktor", "Linus", "Isak", "Noel", "Hugo", "Albin", "Nils", "Leo"
+        "Viktor", "Linus", "Isak", "Noel", "Hugo", "Albin", "Nils", "Leo",
+        "Emil", "Oskar", "Adam", "Jesper", "Rasmus", "Gustav", "Felix", "Arvid"
     };
 
     private static readonly string[] SwedishLastNames =
     {
         "Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson", "Olsson", "Persson",
-        "Svensson", "Gustafsson", "Lindberg", "Lundqvist", "Ekholm", "Forsberg", "Sandin", "Berglund"
+        "Svensson", "Gustafsson", "Lindberg", "Lundqvist", "Ekholm", "Forsberg", "Sandin", "Berglund",
+        "Backstrom", "Nylander", "Holmstrom", "Lindholm", "Dahlstrom", "Wallin", "Norberg", "Soderberg"
     };
 
     private static readonly string[] SlovakFirstNames =

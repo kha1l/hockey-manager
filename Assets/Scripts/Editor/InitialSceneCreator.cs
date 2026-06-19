@@ -682,21 +682,24 @@ public static class InitialSceneCreator
 
         CreateText(parent, "Title", "Главная", 40, new Vector2(0f, 705f), new Vector2(760f, 58f));
 
-        Button homeTab = CreateDashboardActionButton(parent, "TopNavHomeButton", "Главная", new Vector2(-340f, 642f), new Vector2(150f, 46f));
+        Button homeTab = CreateDashboardActionButton(parent, "TopNavHomeButton", "Главная", new Vector2(-375f, 642f), new Vector2(135f, 46f));
         UnityEventTools.AddPersistentListener(homeTab.onClick, controller.ShowDashboard);
-        Button standingsTab = CreateDashboardActionButton(parent, "TopNavStandingsButton", "Таблица", new Vector2(-170f, 642f), new Vector2(150f, 46f));
+        Button calendarTab = CreateDashboardActionButton(parent, "TopNavCalendarButton", "Календарь", new Vector2(-225f, 642f), new Vector2(135f, 46f));
+        UnityEventTools.AddPersistentListener(calendarTab.onClick, controller.ShowCalendar);
+        Button standingsTab = CreateDashboardActionButton(parent, "TopNavStandingsButton", "Таблица", new Vector2(-75f, 642f), new Vector2(135f, 46f));
         UnityEventTools.AddPersistentListener(standingsTab.onClick, controller.ShowStandings);
-        Button teamTab = CreateDashboardActionButton(parent, "TopNavTeamButton", "Команда", new Vector2(0f, 642f), new Vector2(150f, 46f));
+        Button teamTab = CreateDashboardActionButton(parent, "TopNavTeamButton", "Команда", new Vector2(75f, 642f), new Vector2(135f, 46f));
         UnityEventTools.AddPersistentListener(teamTab.onClick, controller.ShowOrganization);
-        Button statsTab = CreateDashboardActionButton(parent, "TopNavStatsButton", "Статистика", new Vector2(170f, 642f), new Vector2(150f, 46f));
+        Button statsTab = CreateDashboardActionButton(parent, "TopNavStatsButton", "Статистика", new Vector2(225f, 642f), new Vector2(135f, 46f));
         UnityEventTools.AddPersistentListener(statsTab.onClick, controller.ShowPlayerStats);
-        Button rosterTab = CreateDashboardActionButton(parent, "TopNavRosterButton", "Состав", new Vector2(340f, 642f), new Vector2(150f, 46f));
+        Button rosterTab = CreateDashboardActionButton(parent, "TopNavRosterButton", "Состав", new Vector2(375f, 642f), new Vector2(135f, 46f));
         UnityEventTools.AddPersistentListener(rosterTab.onClick, controller.ShowLineup);
-        StylePrimaryButton(homeTab, 17);
-        StyleDarkButton(standingsTab, 17);
-        StyleDarkButton(teamTab, 17);
-        StyleDarkButton(statsTab, 17);
-        StyleDarkButton(rosterTab, 17);
+        StylePrimaryButton(homeTab, 15);
+        StyleDarkButton(calendarTab, 15);
+        StyleDarkButton(standingsTab, 15);
+        StyleDarkButton(teamTab, 15);
+        StyleDarkButton(statsTab, 15);
+        StyleDarkButton(rosterTab, 15);
 
         leagueDateText = CreateText(parent, "LeagueDateText", "Дата лиги: ...", 15, new Vector2(0f, 600f), new Vector2(760f, 30f));
 
@@ -751,6 +754,14 @@ public static class InitialSceneCreator
         Button simulateMatchButton = CreateButton(parent, "SimulateMatchButton", "Симулировать матч", new Vector2(225f, -365f), new Vector2(360f, 70f));
         StyleDarkButton(simulateMatchButton, 22);
         UnityEventTools.AddPersistentListener(simulateMatchButton.onClick, controller.SimulateMatch);
+
+        Button nextDayButton = CreateButton(parent, "AdvanceOneDayButton", "Следующий день", new Vector2(-225f, -365f), new Vector2(360f, 70f));
+        StylePrimaryButton(nextDayButton, 22);
+        UnityEventTools.AddPersistentListener(nextDayButton.onClick, controller.AdvanceOneDay);
+
+        Button nextMatchButton = CreateButton(parent, "AdvanceToNextUserMatchButton", "Следующий матч", new Vector2(225f, -365f), new Vector2(360f, 70f));
+        StyleDarkButton(nextMatchButton, 22);
+        UnityEventTools.AddPersistentListener(nextMatchButton.onClick, controller.AdvanceToNextUserMatch);
 
         Button homeButton = CreateButton(parent, "HomeButton", "Главная", new Vector2(-170f, -455f), new Vector2(300f, 52f));
         StyleDarkButton(homeButton, 18);
@@ -1752,17 +1763,17 @@ public static class InitialSceneCreator
     {
         CreateText(parent, "Title", "Календарь", 40, new Vector2(0f, 720f), new Vector2(760f, 70f));
         Text statusText = CreateText(parent, "CalendarStatusText", "Текущий день: 1 | Выбран день: 1", 18, new Vector2(0f, 660f), new Vector2(840f, 36f));
-        Button previousDayButton = CreateButton(parent, "CalendarPreviousDayButton", "-", new Vector2(-310f, 605f), new Vector2(90f, 46f));
+        Button previousDayButton = CreateButton(parent, "CalendarPreviousDayButton", "<", new Vector2(-310f, 605f), new Vector2(90f, 46f));
         UnityEventTools.AddPersistentListener(previousDayButton.onClick, controller.CalendarPreviousDay);
         Button simulateToDayButton = CreateButton(parent, "CalendarSimulateToDayButton", "Симулировать до дня", new Vector2(0f, 605f), new Vector2(430f, 46f));
         UnityEventTools.AddPersistentListener(simulateToDayButton.onClick, controller.SimulateToSelectedCalendarDay);
-        Button nextDayButton = CreateButton(parent, "CalendarNextDayButton", "+", new Vector2(310f, 605f), new Vector2(90f, 46f));
+        Button nextDayButton = CreateButton(parent, "CalendarNextDayButton", ">", new Vector2(310f, 605f), new Vector2(90f, 46f));
         UnityEventTools.AddPersistentListener(nextDayButton.onClick, controller.CalendarNextDay);
-        CreateCalendarHeader(parent);
 
-        Transform gamesContainer = CreateCalendarScrollView(parent);
-        ScheduleGameRowView gameRowTemplate = CreateScheduleGameRowTemplate(gamesContainer);
-        calendarController.Configure(statusText, gamesContainer, gameRowTemplate);
+        GameObject calendarGrid = CreatePanel(parent, "CalendarGrid", new Vector2(0f, -45f), new Vector2(860f, 1060f));
+        calendarGrid.GetComponent<Image>().color = new Color(0.018f, 0.045f, 0.095f, 0.94f);
+        ScheduleGameRowView gameRowTemplate = CreateScheduleGameRowTemplate(calendarGrid.transform);
+        calendarController.Configure(statusText, calendarGrid.transform, gameRowTemplate);
 
         Button backButton = CreateButton(parent, "BackButton", "Назад", new Vector2(0f, -720f), new Vector2(320f, 56f));
         UnityEventTools.AddPersistentListener(backButton.onClick, controller.ShowDashboard);
@@ -1834,12 +1845,14 @@ public static class InitialSceneCreator
         preGameController.TitleText = CreateText(parent, "Title", "Следующий матч", 36, new Vector2(0f, 700f), new Vector2(760f, 62f));
         preGameController.MatchupText = CreateText(parent, "MatchupText", "", 26, new Vector2(0f, 635f), new Vector2(820f, 56f));
         preGameController.DetailsText = CreateText(parent, "DetailsText", "", 20, new Vector2(0f, 580f), new Vector2(820f, 44f));
-        preGameController.HomeLogoImage = CreateTeamLogoImage(parent, "HomeLogo", new Vector2(-245f, 455f), new Vector2(125f, 125f));
-        preGameController.AwayLogoImage = CreateTeamLogoImage(parent, "AwayLogo", new Vector2(245f, 455f), new Vector2(125f, 125f));
-        preGameController.HomeJerseyImage = CreateTeamLogoImage(parent, "HomeJersey", new Vector2(-245f, 300f), new Vector2(125f, 125f));
-        preGameController.AwayJerseyImage = CreateTeamLogoImage(parent, "AwayJersey", new Vector2(245f, 300f), new Vector2(125f, 125f));
-        preGameController.LineupText = CreateText(parent, "LineupText", "", 16, new Vector2(0f, 120f), new Vector2(820f, 330f));
-        preGameController.TacticsText = CreateText(parent, "TacticsText", "", 20, new Vector2(0f, -100f), new Vector2(820f, 44f));
+        preGameController.AwayLogoImage = CreateTeamLogoImage(parent, "AwayLogo", new Vector2(-285f, 455f), new Vector2(125f, 125f));
+        preGameController.HomeLogoImage = CreateTeamLogoImage(parent, "HomeLogo", new Vector2(285f, 455f), new Vector2(125f, 125f));
+        preGameController.AwayJerseyImage = CreateTeamLogoImage(parent, "AwayJersey", new Vector2(-285f, 300f), new Vector2(125f, 125f));
+        preGameController.HomeJerseyImage = CreateTeamLogoImage(parent, "HomeJersey", new Vector2(285f, 300f), new Vector2(125f, 125f));
+        preGameController.AwayTeamInfoText = CreateText(parent, "AwayTeamInfoText", "", 15, new Vector2(-285f, 160f), new Vector2(340f, 170f));
+        preGameController.HomeTeamInfoText = CreateText(parent, "HomeTeamInfoText", "", 15, new Vector2(285f, 160f), new Vector2(340f, 170f));
+        preGameController.LineupText = CreateText(parent, "LineupText", "", 15, new Vector2(0f, -65f), new Vector2(820f, 250f));
+        preGameController.TacticsText = CreateText(parent, "TacticsText", "", 20, new Vector2(0f, -250f), new Vector2(820f, 44f));
 
         Button lineupButton = CreateButton(parent, "PreGameLineupButton", "Состав", new Vector2(-280f, -420f), new Vector2(240f, 56f));
         UnityEventTools.AddPersistentListener(lineupButton.onClick, controller.ShowLineup);
@@ -1927,6 +1940,8 @@ public static class InitialSceneCreator
         UnityEventTools.AddPersistentListener(skipMatchButton.onClick, liveMatchController.SkipMatch);
         Button finishButton = CreateButton(parent, "FinishLiveMatchButton", "Итог", new Vector2(165f, -580f), new Vector2(220f, 48f));
         UnityEventTools.AddPersistentListener(finishButton.onClick, controller.FinishLiveMatch);
+        Button tacticToggleButton = CreateButton(parent, "LiveTacticsToggleButton", "Тактика", new Vector2(395f, -580f), new Vector2(170f, 48f));
+        UnityEventTools.AddPersistentListener(tacticToggleButton.onClick, liveMatchController.ToggleTacticsMenu);
         Button exitButton = CreateButton(parent, "ExitLiveMatchButton", "Выйти и доиграть", new Vector2(0f, -735f), new Vector2(360f, 48f));
         UnityEventTools.AddPersistentListener(exitButton.onClick, controller.ExitLiveMatchAndFinish);
         exitButton.gameObject.SetActive(false);
@@ -1992,6 +2007,7 @@ public static class InitialSceneCreator
 
         tutorialHintView = hintObject.AddComponent<TutorialHintView>();
         tutorialHintView.Configure(titleText, bodyText, dismissButton, helpButton);
+        hintObject.SetActive(false);
         return hintObject;
     }
 
@@ -2206,8 +2222,8 @@ public static class InitialSceneCreator
         ColorBlock colors = button.colors;
         colors.normalColor = new Color(0.08f, 0.09f, 0.12f, 0.92f);
         colors.highlightedColor = new Color(0.12f, 0.16f, 0.20f, 1f);
-        colors.pressedColor = new Color(0.04f, 0.05f, 0.07f, 1f);
-        colors.selectedColor = colors.normalColor;
+        colors.pressedColor = new Color(0.03f, 0.48f, 0.54f, 1f);
+        colors.selectedColor = new Color(0.06f, 0.58f, 0.64f, 1f);
         button.colors = colors;
 
         Text buttonText = button.GetComponentInChildren<Text>();
@@ -2234,8 +2250,8 @@ public static class InitialSceneCreator
         ColorBlock colors = button.colors;
         colors.normalColor = new Color(0.05f, 0.70f, 0.74f, 0.96f);
         colors.highlightedColor = new Color(0.08f, 0.86f, 0.90f, 1f);
-        colors.pressedColor = new Color(0.03f, 0.46f, 0.50f, 1f);
-        colors.selectedColor = colors.normalColor;
+        colors.pressedColor = new Color(0.02f, 0.40f, 0.44f, 1f);
+        colors.selectedColor = new Color(0.10f, 0.92f, 0.96f, 1f);
         button.colors = colors;
 
         Text buttonText = button.GetComponentInChildren<Text>();
@@ -2296,8 +2312,8 @@ public static class InitialSceneCreator
         ColorBlock colors = button.colors;
         colors.normalColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         colors.highlightedColor = Color.white;
-        colors.pressedColor = new Color(0.75f, 0.75f, 0.75f, 1f);
-        colors.selectedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+        colors.pressedColor = new Color(0.05f, 0.70f, 0.74f, 1f);
+        colors.selectedColor = new Color(0.08f, 0.86f, 0.90f, 1f);
         button.colors = colors;
 
         Text buttonText = CreateText(buttonObject.transform, "Text", label, 24, Vector2.zero, rectTransform.sizeDelta);

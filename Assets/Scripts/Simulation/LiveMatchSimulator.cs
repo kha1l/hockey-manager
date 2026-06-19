@@ -174,6 +174,8 @@ public static class LiveMatchSimulator
             return;
         }
 
+        MaybeAutoReturnGoalie(match, homeTeam);
+        MaybeAutoReturnGoalie(match, awayTeam);
         MaybeAutoPullGoalie(match, homeTeam);
         MaybeAutoPullGoalie(match, awayTeam);
         GenerateTeamPossession(match, homeTeam, awayTeam, true);
@@ -235,6 +237,7 @@ public static class LiveMatchSimulator
             "задержка клюшкой",
             "толчок клюшкой",
             "грубость",
+            "высоко поднятая клюшка",
             "атака игрока без шайбы",
             "удар клюшкой"
         };
@@ -261,9 +264,14 @@ public static class LiveMatchSimulator
             shotChance += 0.08f;
         }
 
+        if (attackStats.IsGoaliePulled)
+        {
+            shotChance += 0.05f;
+        }
+
         if (defenseStats.IsGoaliePulled)
         {
-            shotChance += 0.10f;
+            shotChance += 0.12f;
         }
 
         if (UnityEngine.Random.value > Mathf.Clamp(shotChance, 0.08f, 0.48f))
@@ -285,9 +293,19 @@ public static class LiveMatchSimulator
             goalChance += 0.035f;
         }
 
+        if (attackStats.PenaltyKillSecondsRemaining > 0)
+        {
+            goalChance = Mathf.Min(goalChance, 0.025f);
+        }
+
+        if (attackStats.IsGoaliePulled)
+        {
+            goalChance += 0.045f;
+        }
+
         if (defenseStats.IsGoaliePulled)
         {
-            goalChance += 0.16f;
+            goalChance += 0.22f;
         }
         else if (goalie != null)
         {
@@ -387,6 +405,13 @@ public static class LiveMatchSimulator
                 defendingStats.PenaltyKillSecondsRemaining = 0;
                 defendingStats.ActivePenaltyKillPenaltyMinutes = 0;
             }
+            else if (defendingStats.ActivePenaltyKillPenaltyMinutes == 4)
+            {
+                defendingStats.ActivePenaltyKillPenaltyMinutes = 2;
+                scoringStats.ActivePowerPlayPenaltyMinutes = 2;
+                defendingStats.PenaltyKillSecondsRemaining = Mathf.Max(0, defendingStats.PenaltyKillSecondsRemaining - 120);
+                scoringStats.PowerPlaySecondsRemaining = Mathf.Max(0, scoringStats.PowerPlaySecondsRemaining - 120);
+            }
         }
 
         string scoringTeamName = TeamIdentityService.GetDisplayName(scoringTeam);
@@ -402,8 +427,8 @@ public static class LiveMatchSimulator
         goalEvent.Description = PlayerGameStatsGenerator.FormatGoalDescription(
             scoringTeamName,
             GetPlayerName(scorer),
-            match.HomeScore,
-            match.AwayScore,
+            scoringHome ? match.HomeScore : match.AwayScore,
+            scoringHome ? match.AwayScore : match.HomeScore,
             goalEvent.PeriodLabel,
             goalEvent.ClockLabel,
             isPowerPlayGoal,
@@ -411,6 +436,8 @@ public static class LiveMatchSimulator
             goalEvent.Assist1PlayerName,
             goalEvent.Assist2PlayerName);
         AddEvent(match, goalEvent);
+        MaybeAutoReturnGoalie(match, scoringTeam);
+        MaybeAutoReturnGoalie(match, defendingTeam);
 
         if (LiveMatchRulesService.IsSuddenDeathGoal(match))
         {
@@ -464,7 +491,8 @@ public static class LiveMatchSimulator
         PlayerData offender = PickShooter(attackingTeam);
         LiveMatchTeamStatsData offenderStats = attackingHome ? match.HomeStats : match.AwayStats;
         LiveMatchTeamStatsData powerPlayStats = attackingHome ? match.AwayStats : match.HomeStats;
-        int penaltyMinutes = UnityEngine.Random.value < 0.10f ? 5 : 2;
+        string reason = GetPenaltyReason();
+        int penaltyMinutes = GetPenaltyMinutes(reason);
         int penaltySeconds = penaltyMinutes * 60;
         offenderStats.PenaltyMinutes += penaltyMinutes;
         offenderStats.PenaltyKillSecondsRemaining = penaltySeconds;
@@ -479,7 +507,6 @@ public static class LiveMatchSimulator
             stat.PenaltyMinutes += penaltyMinutes;
         }
 
-        string reason = GetPenaltyReason();
         AddEvent(match, CreateEvent(
             match,
             "Penalty",
@@ -656,6 +683,34 @@ public static class LiveMatchSimulator
         {
             LiveMatchGoalieService.PullGoalie(match, team, out string message);
         }
+    }
+
+    private static void MaybeAutoReturnGoalie(LiveMatchStateData match, TeamData team)
+    {
+        if (LiveMatchGoalieService.ShouldAutoReturnGoalie(match, team))
+        {
+            LiveMatchGoalieService.ReturnGoalie(match, team, out string message);
+        }
+    }
+
+    private static int GetPenaltyMinutes(string reason)
+    {
+        if (reason == "грубость" && UnityEngine.Random.value < 0.05f)
+        {
+            return 5;
+        }
+
+        if (reason == "высоко поднятая клюшка" && UnityEngine.Random.value < 0.05f)
+        {
+            return 4;
+        }
+
+        if (UnityEngine.Random.value < 0.01f)
+        {
+            return 5;
+        }
+
+        return 2;
     }
 
     private static PlayerData PickShooter(TeamData team)

@@ -22,6 +22,7 @@ public static class AndroidApkBuilder
 
     private static void BuildAndroidApk(string outputPath)
     {
+        LeagueSeedAssetGenerator.GenerateLeagueSeed();
         InitialSceneCreator.CreateInitialScenes();
         AndroidBuildSettingsApplier.ApplyAndroidBuildSettings();
 

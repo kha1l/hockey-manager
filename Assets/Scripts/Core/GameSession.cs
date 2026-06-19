@@ -706,7 +706,7 @@ public static class GameSession
         bool result = TryAutoFixCurrentTeamForGame(report, out message);
         if (CurrentState != null)
         {
-            SaveLoadService.Save(CurrentState);
+            SaveLoadService.SaveFast(CurrentState);
         }
 
         return result;
@@ -792,7 +792,7 @@ public static class GameSession
 
         if (CurrentState != null)
         {
-            SaveLoadService.Save(CurrentState);
+            SaveLoadService.SaveFast(CurrentState);
         }
 
         message = "Автозамена выполнена: Pro roster и линии готовы"
@@ -3289,6 +3289,124 @@ public static class GameSession
         return SimulateNextScheduledGame();
     }
 
+    public static bool IsCurrentTeamGameToday()
+    {
+        EnsureSeasonScheduleAndStandingsOnly();
+        EnsureCurrentTeam();
+        if (CurrentState == null || CurrentState.Season == null || CurrentTeam == null)
+        {
+            return false;
+        }
+
+        int currentDay = Mathf.Max(1, CurrentState.Season.CurrentDay);
+        return CurrentTeamPlaysOnDay(GetGamesForDay(CurrentState.Season, currentDay));
+    }
+
+    public static int GetNextUserGameDay()
+    {
+        EnsureSeasonScheduleAndStandingsOnly();
+        EnsureCurrentTeam();
+        ScheduleGameData nextGame = FindNextRegularSeasonUserGame();
+        return nextGame == null ? 0 : nextGame.DayNumber;
+    }
+
+    public static int GetCurrentSeasonDay()
+    {
+        return CurrentState == null || CurrentState.Season == null ? 1 : Mathf.Max(1, CurrentState.Season.CurrentDay);
+    }
+
+    public static bool AdvanceRegularSeasonOneCalendarDay(out string message)
+    {
+        message = "";
+        if (CurrentState == null)
+        {
+            message = "Активная игра не найдена";
+            return false;
+        }
+
+        EnsureSeasonScheduleAndStandingsOnly();
+        EnsureCurrentTeam();
+        if (CurrentState.Season == null)
+        {
+            message = "Сезон не найден";
+            return false;
+        }
+
+        if (CurrentState.Season.IsSeasonFinished)
+        {
+            message = "Сезон завершён";
+            return false;
+        }
+
+        int currentDay = Mathf.Max(1, CurrentState.Season.CurrentDay);
+        List<ScheduleGameData> gamesForDay = GetGamesForDay(CurrentState.Season, currentDay);
+        if (CurrentTeamPlaysOnDay(gamesForDay))
+        {
+            message = "Сегодня матч вашей команды";
+            return false;
+        }
+
+        int gamesBefore = CurrentState.TotalGamesSimulated;
+        if (gamesForDay.Count > 0)
+        {
+            SimulateCpuGamesForDay(currentDay, "");
+        }
+
+        CompleteRegularSeasonDayAfterLiveMatch(currentDay, true);
+        CurrentTeam = FindTeam(CurrentState.Teams, CurrentState.SelectedTeamId);
+
+        if (GetNextUnplayedGame(CurrentState.Season) == null)
+        {
+            CurrentState.Season.IsSeasonFinished = true;
+            EnsurePlayoffs();
+        }
+
+        SaveLoadService.SaveFast(CurrentState);
+        int simulatedGames = Mathf.Max(0, CurrentState.TotalGamesSimulated - gamesBefore);
+        message = "Следующий день: " + CurrentState.Season.CurrentDay + " | сыграно CPU-матчей: " + simulatedGames;
+        return true;
+    }
+
+    public static bool AdvanceToNextUserGameDay(out string message)
+    {
+        message = "";
+        if (CurrentState == null)
+        {
+            message = "Активная игра не найдена";
+            return false;
+        }
+
+        EnsureSeasonScheduleAndStandingsOnly();
+        EnsureCurrentTeam();
+        ScheduleGameData nextGame = FindNextRegularSeasonUserGame();
+        if (nextGame == null)
+        {
+            if (CurrentState.Season != null && GetNextUnplayedGame(CurrentState.Season) == null)
+            {
+                CurrentState.Season.IsSeasonFinished = true;
+                EnsurePlayoffs();
+            }
+
+            message = "Ближайший матч пользователя не найден";
+            return false;
+        }
+
+        if (!SimulateCpuOnlyDaysBefore(nextGame.DayNumber, out message))
+        {
+            return false;
+        }
+
+        if (CurrentState.Season != null)
+        {
+            CurrentState.Season.CurrentDay = Mathf.Max(1, nextGame.DayNumber);
+        }
+
+        CurrentTeam = FindTeam(CurrentState.Teams, CurrentState.SelectedTeamId);
+        SaveLoadService.SaveFast(CurrentState);
+        message = "Переход к следующему матчу: день " + nextGame.DayNumber;
+        return true;
+    }
+
     public static int SimulateRegularSeasonToDay(int targetDay)
     {
         if (CurrentState == null)
@@ -3438,7 +3556,9 @@ public static class GameSession
                 HashSet<string> playedTeamIds = new HashSet<string>();
                 foreach (ScheduleGameData game in gamesForDay)
                 {
-                    MatchResultData result = SimulateScheduledRegularSeasonGameFast(game, playedTeamIds);
+                    MatchResultData result = IsCurrentTeamScheduledGame(game)
+                        ? SimulateScheduledRegularSeasonGameFast(game, playedTeamIds)
+                        : SimulateScheduledCpuRegularSeasonGameLight(game, playedTeamIds);
                     if (result == null)
                     {
                         continue;
@@ -3467,7 +3587,7 @@ public static class GameSession
                 CurrentState.Season.IsSeasonFinished = true;
             }
 
-            SaveLoadService.Save(CurrentState);
+            SaveLoadService.SaveFast(CurrentState);
             if (userResult != null)
             {
                 Debug.Log("Симулирован игровой день до матча пользователя: " + userResult.Summary);
@@ -3527,6 +3647,54 @@ public static class GameSession
         PlayerStatsService.ApplyGameStats(CurrentState.Season, result.PlayerStats);
         PlayerFatigueService.ApplyFatigueAfterMatch(homeTeam, awayTeam);
         InjuryService.ApplyInjuryChecksAfterMatch(CurrentState, homeTeam, awayTeam, "RegularSeasonFast");
+
+        if (playedTeamIds != null)
+        {
+            playedTeamIds.Add(homeTeam.Id);
+            playedTeamIds.Add(awayTeam.Id);
+        }
+
+        return result;
+    }
+
+    private static MatchResultData SimulateScheduledCpuRegularSeasonGameLight(ScheduleGameData game, HashSet<string> playedTeamIds)
+    {
+        if (CurrentState == null || CurrentState.Season == null || game == null || game.IsPlayed)
+        {
+            return null;
+        }
+
+        TeamData homeTeam = FindTeam(CurrentState.Teams, game.HomeTeamId);
+        TeamData awayTeam = FindTeam(CurrentState.Teams, game.AwayTeamId);
+        if (homeTeam == null || awayTeam == null)
+        {
+            Debug.LogWarning("Нельзя симулировать CPU-матч: команда из календаря не найдена");
+            return null;
+        }
+
+        if (!PrepareTeamForFastSimulation(homeTeam, false, out string homeMessage))
+        {
+            Debug.LogWarning(homeMessage);
+            return null;
+        }
+
+        if (!PrepareTeamForFastSimulation(awayTeam, false, out string awayMessage))
+        {
+            Debug.LogWarning(awayMessage);
+            return null;
+        }
+
+        CurrentState.EnsureMatchHistory();
+        MatchResultData result = MatchSimulator.SimulateFast(homeTeam, awayTeam);
+        result.PlayerStats = new List<PlayerGameStatData>();
+
+        game.Result = result;
+        game.IsPlayed = true;
+        CurrentState.MatchHistory.Add(result);
+        CurrentState.TotalGamesSimulated++;
+        CurrentState.Season.CurrentGameIndex = game.GameNumber;
+
+        StandingsService.ApplyMatchResult(CurrentState.Season, result);
 
         if (playedTeamIds != null)
         {
@@ -3862,7 +4030,7 @@ public static class GameSession
         {
             result = LiveMatchResultAdapter.ApplyLiveMatchResultToSeason(CurrentState, CurrentLiveMatch, homeTeam, awayTeam);
             SimulateCpuGamesForLiveMatchDay(CurrentLiveMatch.DayIndex);
-            CompleteRegularSeasonDayAfterLiveMatch(CurrentLiveMatch.DayIndex);
+            CompleteRegularSeasonDayAfterLiveMatch(CurrentLiveMatch.DayIndex, true);
         }
 
         LastPostGameSummary = LiveMatchResultAdapter.ToPostGameSummary(CurrentLiveMatch);
@@ -3880,7 +4048,7 @@ public static class GameSession
 
         if (saveAfterApply)
         {
-            SaveLoadService.Save(CurrentState);
+            SaveLoadService.SaveFast(CurrentState);
         }
 
         message = "Live-матч завершён";
@@ -3950,7 +4118,7 @@ public static class GameSession
             }
 
             SimulateCpuGamesForDay(nextDay, "");
-            CompleteRegularSeasonDayAfterLiveMatch(nextDay);
+            CompleteRegularSeasonDayAfterLiveMatch(nextDay, true);
         }
     }
 
@@ -3986,7 +4154,7 @@ public static class GameSession
                 continue;
             }
 
-            MatchResultData result = SimulateScheduledRegularSeasonGameFast(game, playedTeamIds);
+            MatchResultData result = SimulateScheduledCpuRegularSeasonGameLight(game, playedTeamIds);
             if (result != null)
             {
                 results.Add(result);
@@ -3997,7 +4165,19 @@ public static class GameSession
         return results;
     }
 
+    private static bool IsCurrentTeamScheduledGame(ScheduleGameData game)
+    {
+        return CurrentTeam != null
+            && game != null
+            && (game.HomeTeamId == CurrentTeam.Id || game.AwayTeamId == CurrentTeam.Id);
+    }
+
     private static void CompleteRegularSeasonDayAfterLiveMatch(int simulatedDay)
+    {
+        CompleteRegularSeasonDayAfterLiveMatch(simulatedDay, false);
+    }
+
+    private static void CompleteRegularSeasonDayAfterLiveMatch(int simulatedDay, bool lightweight)
     {
         if (CurrentState == null || CurrentState.Season == null)
         {
@@ -4007,16 +4187,24 @@ public static class GameSession
         AdvanceRosterDaysForTeams();
         InjuryService.AdvanceInjuryRecovery(CurrentState);
         WaiverService.AdvanceWaiverDay(CurrentState);
-        RunCpuRosterManagement("AfterLiveMatchDay", false);
+        if (!lightweight)
+        {
+            RunCpuRosterManagement("AfterLiveMatchDay", false);
+        }
+
         CurrentState.Season.CurrentDay = simulatedDay + 1;
         if (GetNextUnplayedGame(CurrentState.Season) == null)
         {
             CurrentState.Season.IsSeasonFinished = true;
         }
 
-        UpdateMoraleAfterGameDay();
-        EnsureChemistry();
-        EnsureOwnerGoals();
+        if (!lightweight)
+        {
+            UpdateMoraleAfterGameDay();
+            EnsureChemistry();
+            EnsureOwnerGoals();
+        }
+
         TutorialService.MarkStepCompleted(CurrentState, TutorialConfig.StepSimulateFirstDay);
     }
 
@@ -4052,11 +4240,13 @@ public static class GameSession
             HomeLogoResourcePath = homeIdentity == null ? "" : homeIdentity.LogoResourcePath,
             HomeJerseyResourcePath = TeamJerseySelectionService.GetHomeJerseyPath(homeTeam),
             HomeFullBodyResourcePath = homeIdentity == null ? "" : homeIdentity.FullBodyResourcePath,
+            HomePreviewStatsText = BuildPreGameTeamStats(homeTeam),
             AwayTeamId = awayTeam == null ? "" : awayTeam.Id,
             AwayTeamName = TeamIdentityService.GetDisplayName(awayTeam),
             AwayLogoResourcePath = awayIdentity == null ? "" : awayIdentity.LogoResourcePath,
             AwayJerseyResourcePath = TeamJerseySelectionService.GetAwayJerseyPath(homeTeam, awayTeam),
             AwayFullBodyResourcePath = awayIdentity == null ? "" : awayIdentity.FullBodyResourcePath,
+            AwayPreviewStatsText = BuildPreGameTeamStats(awayTeam),
             UserTeamId = CurrentTeam == null ? "" : CurrentTeam.Id,
             UserTeamName = TeamIdentityService.GetDisplayName(CurrentTeam),
             IsUserHomeTeam = CurrentTeam != null && homeTeam != null && CurrentTeam.Id == homeTeam.Id,
@@ -4072,6 +4262,175 @@ public static class GameSession
             CanStartMatch = canStart && homeTeam != null && awayTeam != null,
             Summary = TeamIdentityService.GetDisplayName(awayTeam) + " @ " + TeamIdentityService.GetDisplayName(homeTeam)
         };
+    }
+
+    private static string BuildPreGameTeamStats(TeamData team)
+    {
+        if (CurrentState == null || team == null)
+        {
+            return "Место: -\n0-0-0 | GF 0 GA 0\nPP 0% | PK 0% | SV% .000";
+        }
+
+        TeamStandingData standing = FindStanding(CurrentState.Season, team.Id);
+        int rank = GetDivisionRank(team);
+        TeamSpecialStats stats = CalculateTeamSpecialStats(team.Id);
+        string record = standing == null
+            ? "0-0-0"
+            : standing.Wins + "-" + standing.Losses + "-" + standing.OvertimeLosses;
+
+        return "Место в дивизионе: " + (rank <= 0 ? "-" : rank.ToString())
+            + "\n" + record + " | GF " + stats.GoalsFor + " GA " + stats.GoalsAgainst
+            + "\nPP " + FormatPercent(stats.PowerPlayGoals, stats.PowerPlayOpportunities)
+            + " | PK " + FormatPercent(stats.PenaltyKillStops, stats.PenaltyKillOpportunities)
+            + " | SV% " + FormatSavePercentage(stats.Saves, stats.ShotsAgainst);
+    }
+
+    private static TeamStandingData FindStanding(SeasonData season, string teamId)
+    {
+        if (season == null || season.Standings == null || string.IsNullOrEmpty(teamId))
+        {
+            return null;
+        }
+
+        foreach (TeamStandingData standing in season.Standings)
+        {
+            if (standing != null && standing.TeamId == teamId)
+            {
+                return standing;
+            }
+        }
+
+        return null;
+    }
+
+    private static int GetDivisionRank(TeamData team)
+    {
+        if (CurrentState == null || CurrentState.Season == null || CurrentState.Season.Standings == null || team == null)
+        {
+            return 0;
+        }
+
+        List<TeamStandingData> division = new List<TeamStandingData>();
+        foreach (TeamStandingData standing in CurrentState.Season.Standings)
+        {
+            TeamData standingTeam = FindTeam(CurrentState.Teams, standing == null ? "" : standing.TeamId);
+            if (standingTeam != null && standingTeam.DivisionName == team.DivisionName)
+            {
+                division.Add(standing);
+            }
+        }
+
+        division.Sort(CompareStandingsForPreGame);
+        for (int i = 0; i < division.Count; i++)
+        {
+            if (division[i] != null && division[i].TeamId == team.Id)
+            {
+                return i + 1;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int CompareStandingsForPreGame(TeamStandingData left, TeamStandingData right)
+    {
+        int points = (right == null ? 0 : right.Points).CompareTo(left == null ? 0 : left.Points);
+        if (points != 0)
+        {
+            return points;
+        }
+
+        int wins = (right == null ? 0 : right.Wins).CompareTo(left == null ? 0 : left.Wins);
+        if (wins != 0)
+        {
+            return wins;
+        }
+
+        int rightDiff = right == null ? 0 : right.GoalsFor - right.GoalsAgainst;
+        int leftDiff = left == null ? 0 : left.GoalsFor - left.GoalsAgainst;
+        return rightDiff.CompareTo(leftDiff);
+    }
+
+    private static TeamSpecialStats CalculateTeamSpecialStats(string teamId)
+    {
+        TeamSpecialStats stats = new TeamSpecialStats();
+        if (CurrentState == null || CurrentState.MatchHistory == null || string.IsNullOrEmpty(teamId))
+        {
+            return stats;
+        }
+
+        foreach (MatchResultData result in CurrentState.MatchHistory)
+        {
+            if (result == null)
+            {
+                continue;
+            }
+
+            if (result.HomeTeamId == teamId)
+            {
+                stats.GoalsFor += result.HomeScore;
+                stats.GoalsAgainst += result.AwayScore;
+                stats.PowerPlayGoals += result.HomePowerPlayGoals;
+                stats.PowerPlayOpportunities += result.HomePowerPlayOpportunities;
+                stats.PenaltyKillOpportunities += result.AwayPowerPlayOpportunities;
+                stats.PenaltyKillStops += Math.Max(0, result.AwayPowerPlayOpportunities - result.AwayPowerPlayGoals);
+                stats.ShotsAgainst += result.AwayShots;
+                stats.Saves += Math.Max(0, result.AwayShots - result.AwayScore);
+            }
+            else if (result.AwayTeamId == teamId)
+            {
+                stats.GoalsFor += result.AwayScore;
+                stats.GoalsAgainst += result.HomeScore;
+                stats.PowerPlayGoals += result.AwayPowerPlayGoals;
+                stats.PowerPlayOpportunities += result.AwayPowerPlayOpportunities;
+                stats.PenaltyKillOpportunities += result.HomePowerPlayOpportunities;
+                stats.PenaltyKillStops += Math.Max(0, result.HomePowerPlayOpportunities - result.HomePowerPlayGoals);
+                stats.ShotsAgainst += result.HomeShots;
+                stats.Saves += Math.Max(0, result.HomeShots - result.HomeScore);
+            }
+        }
+
+        TeamStandingData standing = FindStanding(CurrentState.Season, teamId);
+        if (standing != null)
+        {
+            stats.GoalsFor = Math.Max(stats.GoalsFor, standing.GoalsFor);
+            stats.GoalsAgainst = Math.Max(stats.GoalsAgainst, standing.GoalsAgainst);
+        }
+
+        return stats;
+    }
+
+    private static string FormatPercent(int numerator, int denominator)
+    {
+        if (denominator <= 0)
+        {
+            return "0%";
+        }
+
+        return (int)Math.Round(numerator * 100f / denominator) + "%";
+    }
+
+    private static string FormatSavePercentage(int saves, int shotsAgainst)
+    {
+        if (shotsAgainst <= 0)
+        {
+            return ".000";
+        }
+
+        float value = Math.Max(0f, Math.Min(1f, saves / (float)shotsAgainst));
+        return value.ToString(".000");
+    }
+
+    private struct TeamSpecialStats
+    {
+        public int GoalsFor;
+        public int GoalsAgainst;
+        public int PowerPlayGoals;
+        public int PowerPlayOpportunities;
+        public int PenaltyKillStops;
+        public int PenaltyKillOpportunities;
+        public int Saves;
+        public int ShotsAgainst;
     }
 
     private static PreGameSetupData TryCreatePlayoffPreGameSetup()

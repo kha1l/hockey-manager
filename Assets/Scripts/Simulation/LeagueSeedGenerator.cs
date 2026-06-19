@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 public static class LeagueSeedGenerator
 {
-    public const string CurrentSeedVersion = "league-seed-v2";
+    public const string CurrentSeedVersion = "league-seed-v3";
     private const string SeedCreatedAtUtc = "2026-07-01T00:00:00.0000000Z";
 
     private static readonly PlayerSlot[] PlayerSlots =
@@ -242,6 +242,7 @@ public static class LeagueSeedGenerator
         team.EnsurePlayers();
         team.EnsureDraftRights();
         TeamRosterService.EnsureRosterStatusesForTeam(team);
+        ContractGenerator.NormalizeInitialNhlPayrollToCapBand(team);
         team.Lineup = LineupService.BuildAutoLineup(team);
         team.SpecialTeams = SpecialTeamsService.BuildAutoSpecialTeams(team);
         TacticsService.EnsureTactics(team);
@@ -256,7 +257,7 @@ public static class LeagueSeedGenerator
         int playerNumber,
         Random random)
     {
-        string nationality = PlayerNameSeedData.PickNationality(random);
+        string nationality = PickNationalityForTeam(identity, random);
         PlayerNameSeedData.PickName(nationality, random, out string firstName, out string lastName);
 
         int overall = CalculateOverall(slot, teamBonus, random);
@@ -360,6 +361,44 @@ public static class LeagueSeedGenerator
         if (slot.DepthRank <= 2) return Clamp(GetRandomInclusive(random, 78, 84) + teamBonus, 70, 89);
         if (slot.DepthRank <= 4) return Clamp(GetRandomInclusive(random, 73, 79) + teamBonus / 2, 65, 84);
         return Clamp(GetRandomInclusive(random, 68, 74) + teamBonus / 2, 60, 80);
+    }
+
+    private static string PickNationalityForTeam(TeamIdentityData identity, Random random)
+    {
+        if (identity == null || random == null)
+        {
+            return PlayerNameSeedData.Russia;
+        }
+
+        int roll = random.Next(0, 100);
+        if (identity.TeamId == "minsk_bisons")
+        {
+            if (roll < 55) return PlayerNameSeedData.Belarus;
+            if (roll < 78) return PlayerNameSeedData.Russia;
+            return PlayerNameSeedData.PickNationality(random);
+        }
+
+        if (identity.TeamId == "astana_golden_eagles")
+        {
+            if (roll < 45) return PlayerNameSeedData.Russia;
+            if (roll < 65) return PlayerNameSeedData.Belarus;
+            if (roll < 75) return PlayerNameSeedData.Czechia;
+            return PlayerNameSeedData.PickNationality(random);
+        }
+
+        if (IsRussianRegionTeam(identity.TeamId))
+        {
+            if (roll < 52) return PlayerNameSeedData.Russia;
+            if (roll < 72) return PlayerNameSeedData.Belarus;
+            return PlayerNameSeedData.PickNationality(random);
+        }
+
+        return PlayerNameSeedData.PickNationality(random);
+    }
+
+    private static bool IsRussianRegionTeam(string teamId)
+    {
+        return !string.IsNullOrEmpty(teamId) && teamId != "minsk_bisons" && teamId != "astana_golden_eagles";
     }
 
     private static int CalculateAge(PlayerSlot slot, int overall, Random random)

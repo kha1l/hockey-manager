@@ -175,6 +175,7 @@ public class GameScreenController : MonoBehaviour
     private void BindCompactDashboardNavigation()
     {
         BindSceneButton("TopNavHomeButton", ShowDashboard);
+        BindSceneButton("TopNavCalendarButton", ShowCalendar);
         BindSceneButton("TopNavStandingsButton", ShowStandings);
         BindSceneButton("TopNavTeamButton", ShowOrganization);
         BindSceneButton("TopNavStatsButton", ShowPlayerStats);
@@ -3133,6 +3134,13 @@ public class GameScreenController : MonoBehaviour
 
     private IEnumerator SimulateMatchRoutine()
     {
+        if (!GameSession.IsCurrentTeamGameToday())
+        {
+            Debug.LogWarning("Сегодня у вашей команды нет матча. Используйте 'Следующий день' или 'Следующий матч'.");
+            MeasurePanelRefresh("Dashboard", RefreshDashboard);
+            yield break;
+        }
+
         bool shouldShowPostGame = false;
         RunWithBusy("Симуляция матча...", () =>
         {
@@ -3168,7 +3176,6 @@ public class GameScreenController : MonoBehaviour
             return;
         }
 
-        MeasurePanelRefresh("Dashboard", RefreshDashboard);
         GameSession.PreparePostGameSummary(result);
         shouldShowPostGame = true;
         Debug.Log("Результат матча: " + result.Summary);
@@ -3176,10 +3183,58 @@ public class GameScreenController : MonoBehaviour
 
         if (shouldShowPostGame)
         {
-            ShowBusy("Симуляция матча...");
-            yield return new WaitForSeconds(5f);
-            HideBusy();
+            yield return null;
             ShowPostGameSummary();
+        }
+    }
+
+    public void AdvanceOneDay()
+    {
+        RunWithBusy("Переход к следующему дню...", () =>
+        {
+            bool advanced = GameSession.AdvanceRegularSeasonOneCalendarDay(out string message);
+            if (advanced)
+            {
+                Debug.Log(message);
+            }
+            else
+            {
+                Debug.LogWarning(message);
+            }
+
+            RefreshAfterCalendarAdvance();
+        });
+    }
+
+    public void AdvanceToNextUserMatch()
+    {
+        RunWithBusy("Переход к следующему матчу...", () =>
+        {
+            bool advanced = GameSession.AdvanceToNextUserGameDay(out string message);
+            if (advanced)
+            {
+                Debug.Log(message);
+            }
+            else
+            {
+                Debug.LogWarning(message);
+            }
+
+            RefreshAfterCalendarAdvance();
+        });
+    }
+
+    private void RefreshAfterCalendarAdvance()
+    {
+        MeasurePanelRefresh("Dashboard", RefreshDashboard);
+        MeasurePanelRefresh("Calendar", RefreshCalendar);
+        MeasurePanelRefresh("Standings", RefreshStandings);
+        MeasurePanelRefresh("PlayerStats", RefreshPlayerStats);
+        MeasurePanelRefresh("Injuries", RefreshInjuries);
+        MeasurePanelRefresh("Waivers", RefreshWaivers);
+        if (IsPlayoffEntryAvailable())
+        {
+            MeasurePanelRefresh("Playoffs", RefreshPlayoffs);
         }
     }
 
@@ -3305,6 +3360,13 @@ public class GameScreenController : MonoBehaviour
     {
         RunWithBusy("Подготовка матча...", () =>
         {
+            if (!GameSession.IsCurrentTeamGameToday())
+            {
+                Debug.LogWarning("Сегодня у вашей команды нет матча. Используйте 'Следующий день' или 'Следующий матч'.");
+                MeasurePanelRefresh("Dashboard", RefreshDashboard);
+                return;
+            }
+
             bool prepared = GameSession.PrepareNextUserMatch(out PreGameSetupData setup, out string message);
             if (!prepared && GameSession.AutoFixCurrentTeamRosterAndLineup(out string autoFixMessage))
             {
@@ -3382,10 +3444,10 @@ public class GameScreenController : MonoBehaviour
         }
 
         Debug.Log(message);
-        yield return new WaitForSeconds(0.25f);
+        yield return null;
         if (GameSession.CurrentState != null)
         {
-            SaveLoadService.Save(GameSession.CurrentState);
+            SaveLoadService.SaveFast(GameSession.CurrentState);
         }
 
         _isCompletingLiveMatchResult = false;
@@ -3457,6 +3519,7 @@ public class GameScreenController : MonoBehaviour
         UpdateFinanceText();
         UpdateCpuRosterAiText();
         UpdateDashboardNavigation();
+        UpdateDashboardMatchButtons();
     }
 
     private void RefreshContracts()
@@ -3587,6 +3650,14 @@ public class GameScreenController : MonoBehaviour
 
     public void ShowTutorial()
     {
+        Debug.Log("Подсказки отключены");
+        HideTutorialHintOverlay();
+        HideTutorial();
+        return;
+    }
+
+    private void ShowTutorialLegacy()
+    {
         if (TutorialPanel != null)
         {
             TutorialPanel.SetActive(true);
@@ -3664,17 +3735,16 @@ public class GameScreenController : MonoBehaviour
     public void UpdateTutorialHint(string panelId)
     {
         _currentTutorialPanelId = TutorialConfig.NormalizePanelId(panelId);
-        TutorialHintData hint = GameSession.GetCurrentPanelHint(_currentTutorialPanelId);
-        _currentTutorialHintId = hint == null ? "" : hint.HintId;
+        _currentTutorialHintId = "";
 
         if (TutorialHintText != null)
         {
-            TutorialHintText.text = hint == null ? "" : hint.Title + "\n" + hint.Body;
+            TutorialHintText.text = "";
         }
 
         if (_tutorialHintView != null)
         {
-            _tutorialHintView.Initialize(hint, this);
+            _tutorialHintView.Clear();
         }
     }
 
@@ -4255,7 +4325,8 @@ public class GameScreenController : MonoBehaviour
             CurrentTeamIdentityText.text = TeamIdentityService.GetAbbreviation(team)
                 + " | " + team.ConferenceName
                 + " | " + team.DivisionName
-                + "\nФорма: " + BuildLastFiveForm(GameSession.CurrentState, team.Id);
+                + "\nФорма: " + BuildLastFiveForm(GameSession.CurrentState, team.Id)
+                + "\n" + BuildTeamPerformanceLine(GameSession.CurrentState, team);
         }
 
         if (CurrentTeamLogoImage != null)
@@ -4619,7 +4690,7 @@ public class GameScreenController : MonoBehaviour
                     + playerStats.Assists + "A "
                     + playerStats.Points + "P"
                     + " | +/- " + playerStats.PlusMinus
-                    + " | Бр " + playerStats.Shots;
+                    + " | PIM " + playerStats.PenaltyMinutes;
                 if (shownStats < 4)
                 {
                     statsText += "\n";
@@ -4668,6 +4739,109 @@ public class GameScreenController : MonoBehaviour
         }
 
         return text;
+    }
+
+    public static string BuildTeamPerformanceLine(GameState state, TeamData team)
+    {
+        if (state == null || team == null)
+        {
+            return "GF 0 | GA 0 | PP 0% | PK 0% | SV% .000";
+        }
+
+        TeamSpecialStats stats = CalculateTeamSpecialStats(state, team.Id);
+        return "GF " + stats.GoalsFor
+            + " | GA " + stats.GoalsAgainst
+            + " | PP " + FormatPercent(stats.PowerPlayGoals, stats.PowerPlayOpportunities)
+            + " | PK " + FormatPercent(stats.PenaltyKillStops, stats.PenaltyKillOpportunities)
+            + " | SV% " + FormatSavePercentage(stats.Saves, stats.ShotsAgainst);
+    }
+
+    private static TeamSpecialStats CalculateTeamSpecialStats(GameState state, string teamId)
+    {
+        TeamSpecialStats stats = new TeamSpecialStats();
+        if (state == null || state.MatchHistory == null || string.IsNullOrEmpty(teamId))
+        {
+            return stats;
+        }
+
+        foreach (MatchResultData result in state.MatchHistory)
+        {
+            if (result == null)
+            {
+                continue;
+            }
+
+            if (result.HomeTeamId == teamId)
+            {
+                stats.GoalsFor += result.HomeScore;
+                stats.GoalsAgainst += result.AwayScore;
+                stats.PowerPlayGoals += result.HomePowerPlayGoals;
+                stats.PowerPlayOpportunities += result.HomePowerPlayOpportunities;
+                stats.PenaltyKillOpportunities += result.AwayPowerPlayOpportunities;
+                stats.PenaltyKillStops += Mathf.Max(0, result.AwayPowerPlayOpportunities - result.AwayPowerPlayGoals);
+                stats.ShotsAgainst += result.AwayShots;
+                stats.Saves += Mathf.Max(0, result.AwayShots - result.AwayScore);
+            }
+            else if (result.AwayTeamId == teamId)
+            {
+                stats.GoalsFor += result.AwayScore;
+                stats.GoalsAgainst += result.HomeScore;
+                stats.PowerPlayGoals += result.AwayPowerPlayGoals;
+                stats.PowerPlayOpportunities += result.AwayPowerPlayOpportunities;
+                stats.PenaltyKillOpportunities += result.HomePowerPlayOpportunities;
+                stats.PenaltyKillStops += Mathf.Max(0, result.HomePowerPlayOpportunities - result.HomePowerPlayGoals);
+                stats.ShotsAgainst += result.HomeShots;
+                stats.Saves += Mathf.Max(0, result.HomeShots - result.HomeScore);
+            }
+        }
+
+        if (state.Season != null && state.Season.Standings != null)
+        {
+            foreach (TeamStandingData standing in state.Season.Standings)
+            {
+                if (standing != null && standing.TeamId == teamId)
+                {
+                    stats.GoalsFor = Mathf.Max(stats.GoalsFor, standing.GoalsFor);
+                    stats.GoalsAgainst = Mathf.Max(stats.GoalsAgainst, standing.GoalsAgainst);
+                    break;
+                }
+            }
+        }
+
+        return stats;
+    }
+
+    private static string FormatPercent(int numerator, int denominator)
+    {
+        if (denominator <= 0)
+        {
+            return "0%";
+        }
+
+        return Mathf.RoundToInt(numerator * 100f / denominator) + "%";
+    }
+
+    private static string FormatSavePercentage(int saves, int shotsAgainst)
+    {
+        if (shotsAgainst <= 0)
+        {
+            return ".000";
+        }
+
+        float value = Mathf.Clamp01(saves / (float)shotsAgainst);
+        return value.ToString(".000");
+    }
+
+    private struct TeamSpecialStats
+    {
+        public int GoalsFor;
+        public int GoalsAgainst;
+        public int PowerPlayGoals;
+        public int PowerPlayOpportunities;
+        public int PenaltyKillStops;
+        public int PenaltyKillOpportunities;
+        public int Saves;
+        public int ShotsAgainst;
     }
 
     private static string BuildLastFiveForm(GameState state, string teamId)
@@ -4953,6 +5127,29 @@ public class GameScreenController : MonoBehaviour
         SetDashboardText("DashboardLatestNewsText", BuildLatestNewsDashboardSummary());
     }
 
+    private void UpdateDashboardMatchButtons()
+    {
+        bool seasonFinished = GameSession.CurrentState != null
+            && GameSession.CurrentState.Season != null
+            && GameSession.CurrentState.Season.IsSeasonFinished;
+        bool hasGameToday = !seasonFinished && GameSession.IsCurrentTeamGameToday();
+        bool hasNextUserGame = !seasonFinished && GameSession.GetNextUserGameDay() > 0;
+
+        SetSceneButtonActive("PlayNextUserMatchButton", hasGameToday);
+        SetSceneButtonActive("SimulateMatchButton", hasGameToday);
+        SetSceneButtonActive("AdvanceOneDayButton", !hasGameToday && !seasonFinished);
+        SetSceneButtonActive("AdvanceToNextUserMatchButton", !hasGameToday && hasNextUserGame);
+    }
+
+    private static void SetSceneButtonActive(string objectName, bool isActive)
+    {
+        Button button = FindSceneButton(objectName);
+        if (button != null)
+        {
+            button.gameObject.SetActive(isActive);
+        }
+    }
+
     private void SetDashboardGroupActive(string groupName, bool isActive)
     {
         Transform group = FindDashboardChild(groupName);
@@ -5152,7 +5349,8 @@ public class GameScreenController : MonoBehaviour
         ScheduleGameData nextGame = GameSession.GetNextGameForCurrentTeam();
         if (nextGame != null)
         {
-            _nextGameText.text = "Следующий матч: " + nextGame.HomeTeamName + " vs " + nextGame.AwayTeamName;
+            string label = nextGame.DayNumber == GameSession.GetCurrentSeasonDay() ? "Сегодня матч: " : "Следующий матч: ";
+            _nextGameText.text = label + nextGame.HomeTeamName + " vs " + nextGame.AwayTeamName;
             return;
         }
 

@@ -34,12 +34,13 @@ public static class PlayerGameStatsGenerator
         AddContextStats(homeContext, gameStats);
         AddContextStats(awayContext, gameStats);
 
+        AssignPenaltyMinutes(homeContext, penaltyEvents);
+        AssignPenaltyMinutes(awayContext, penaltyEvents);
         AssignGoalsAndAssists(homeContext, awayContext, goalEvents);
         AssignGoalsAndAssists(awayContext, homeContext, goalEvents);
         AssignShots(homeContext);
         AssignShots(awayContext);
-        AssignPenaltyMinutes(homeContext, penaltyEvents);
-        AssignPenaltyMinutes(awayContext, penaltyEvents);
+        AlignPowerPlayGoalsWithPenalties(goalEvents, penaltyEvents);
         result.Events = BuildMatchEvents(result, goalEvents, penaltyEvents);
 
         foreach (PlayerGameStatData stat in gameStats)
@@ -223,9 +224,14 @@ public static class PlayerGameStatsGenerator
         List<PlayerData> skaters = context.Skaters;
         List<PlayerGameStatData> skaterStats = context.SkaterStats;
         int remainingMinutes = Mathf.Max(0, penaltyMinutes);
-        while (remainingMinutes > 0)
+        while (remainingMinutes >= 2)
         {
-            int minutes = remainingMinutes >= 5 && Random.value < 0.20f ? 5 : 2;
+            string reason = GetPenaltyReason();
+            int minutes = GetPenaltyMinutes(reason, remainingMinutes);
+            if (remainingMinutes - minutes == 1)
+            {
+                minutes = remainingMinutes >= 4 ? 4 : 2;
+            }
             if (remainingMinutes < minutes)
             {
                 minutes = remainingMinutes;
@@ -244,7 +250,7 @@ public static class PlayerGameStatsGenerator
                 {
                     Team = team,
                     Offender = player,
-                    Reason = GetPenaltyReason(),
+                    Reason = reason,
                     Minutes = minutes,
                     GameSecondsElapsed = Random.Range(0, LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds)
                 });
@@ -252,6 +258,74 @@ public static class PlayerGameStatsGenerator
 
             remainingMinutes -= minutes;
         }
+    }
+
+    private static void AlignPowerPlayGoalsWithPenalties(
+        List<SimulatedGoalEvent> goalEvents,
+        List<SimulatedPenaltyEvent> penaltyEvents)
+    {
+        if (goalEvents == null || penaltyEvents == null || penaltyEvents.Count == 0)
+        {
+            if (goalEvents != null)
+            {
+                foreach (SimulatedGoalEvent goalEvent in goalEvents)
+                {
+                    if (goalEvent != null)
+                    {
+                        goalEvent.IsPowerPlayGoal = false;
+                    }
+                }
+            }
+
+            return;
+        }
+
+        int regulationSeconds = LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds;
+        foreach (SimulatedGoalEvent goalEvent in goalEvents)
+        {
+            if (goalEvent == null || !goalEvent.IsPowerPlayGoal)
+            {
+                continue;
+            }
+
+            SimulatedPenaltyEvent penaltyEvent = FindPenaltyAgainstTeam(goalEvent.Team, penaltyEvents, goalEvent.GameSecondsElapsed);
+            if (penaltyEvent == null)
+            {
+                goalEvent.IsPowerPlayGoal = false;
+                continue;
+            }
+
+            int maxOffset = Mathf.Max(20, penaltyEvent.Minutes * 60 - 20);
+            goalEvent.GameSecondsElapsed = Mathf.Clamp(
+                penaltyEvent.GameSecondsElapsed + Random.Range(15, maxOffset),
+                0,
+                regulationSeconds - 1);
+        }
+    }
+
+    private static SimulatedPenaltyEvent FindPenaltyAgainstTeam(
+        TeamData scoringTeam,
+        List<SimulatedPenaltyEvent> penaltyEvents,
+        int preferredTime)
+    {
+        SimulatedPenaltyEvent best = null;
+        int bestDelta = int.MaxValue;
+        foreach (SimulatedPenaltyEvent penaltyEvent in penaltyEvents)
+        {
+            if (penaltyEvent == null || penaltyEvent.Team == null || scoringTeam == null || penaltyEvent.Team.Id == scoringTeam.Id)
+            {
+                continue;
+            }
+
+            int delta = Mathf.Abs(preferredTime - penaltyEvent.GameSecondsElapsed);
+            if (delta < bestDelta)
+            {
+                best = penaltyEvent;
+                bestDelta = delta;
+            }
+        }
+
+        return best;
     }
 
     private static void AssignShots(TeamGameStatContext context)
@@ -417,8 +491,8 @@ public static class PlayerGameStatsGenerator
             matchEvent.Description = FormatGoalDescription(
                 matchEvent.TeamName,
                 matchEvent.PlayerName,
-                homeScore,
-                awayScore,
+                goalEvent.IsHomeTeam ? homeScore : awayScore,
+                goalEvent.IsHomeTeam ? awayScore : homeScore,
                 matchEvent.PeriodLabel,
                 matchEvent.ClockLabel,
                 goalEvent.IsPowerPlayGoal,
@@ -443,8 +517,50 @@ public static class PlayerGameStatsGenerator
             events.Add(matchEvent);
         }
 
+        AddSimulatedGoaliePullEvent(result, events);
         events.Sort(CompareEventsAscending);
         return events;
+    }
+
+    private static void AddSimulatedGoaliePullEvent(MatchResultData result, List<LiveMatchEventData> events)
+    {
+        if (result == null || events == null || result.IsOvertime || result.HomeScore == result.AwayScore)
+        {
+            return;
+        }
+
+        int margin = Mathf.Abs(result.HomeScore - result.AwayScore);
+        if (margin > 3)
+        {
+            return;
+        }
+
+        string trailingTeamId = result.HomeScore < result.AwayScore ? result.HomeTeamId : result.AwayTeamId;
+        string trailingTeamName = result.HomeScore < result.AwayScore ? result.HomeTeamName : result.AwayTeamName;
+        int secondsRemaining = GetSimulatedPullSecondsRemaining(margin);
+        int regulationSeconds = LiveMatchConfig.RegulationPeriods * LiveMatchConfig.RegulationPeriodSeconds;
+        LiveMatchEventData pullEvent = CreateTimedEvent(Mathf.Clamp(regulationSeconds - secondsRemaining, 0, regulationSeconds - 1));
+        pullEvent.EventType = "GoaliePulled";
+        pullEvent.TeamId = trailingTeamId;
+        pullEvent.TeamName = trailingTeamName;
+        pullEvent.Importance = 3;
+        pullEvent.Description = trailingTeamName + ": вратарь снят, шестой полевой";
+        events.Add(pullEvent);
+    }
+
+    private static int GetSimulatedPullSecondsRemaining(int deficit)
+    {
+        if (deficit >= 3)
+        {
+            return Random.Range(LiveMatchConfig.ThreeGoalPullGoalieMinSeconds, LiveMatchConfig.ThreeGoalPullGoalieMaxSeconds + 1);
+        }
+
+        if (deficit == 2)
+        {
+            return Random.Range(LiveMatchConfig.TwoGoalPullGoalieMinSeconds, LiveMatchConfig.TwoGoalPullGoalieMaxSeconds + 1);
+        }
+
+        return Random.Range(LiveMatchConfig.OneGoalPullGoalieMinSeconds, LiveMatchConfig.OneGoalPullGoalieMaxSeconds + 1);
     }
 
     public static string FormatGoalDescription(
@@ -476,6 +592,26 @@ public static class PlayerGameStatsGenerator
             + scorerName
             + strengthText
             + assists;
+    }
+
+    private static int GetPenaltyMinutes(string reason, int remainingMinutes)
+    {
+        if (reason == "грубость" && remainingMinutes >= 5 && Random.value < 0.05f)
+        {
+            return 5;
+        }
+
+        if (reason == "высоко поднятая клюшка" && remainingMinutes >= 4 && Random.value < 0.05f)
+        {
+            return 4;
+        }
+
+        if (remainingMinutes >= 5 && Random.value < 0.01f)
+        {
+            return 5;
+        }
+
+        return remainingMinutes == 1 ? 1 : 2;
     }
 
     public static string FormatAssists(string assist1Name, string assist2Name)
@@ -541,6 +677,7 @@ public static class PlayerGameStatsGenerator
             "задержка клюшкой",
             "толчок клюшкой",
             "грубость",
+            "высоко поднятая клюшка",
             "атака игрока без шайбы",
             "удар клюшкой"
         };

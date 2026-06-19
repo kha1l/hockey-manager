@@ -19,10 +19,12 @@ public class LiveMatchController : MonoBehaviour
     public Button Speed4Button;
 
     private float _tickAccumulator;
+    private bool _isTacticsMenuVisible;
 
     public void ShowLiveMatch(LiveMatchStateData match)
     {
         _tickAccumulator = 0f;
+        _isTacticsMenuVisible = false;
         ApplyCompactMatchUi();
         Refresh(match);
     }
@@ -102,6 +104,12 @@ public class LiveMatchController : MonoBehaviour
     public void SetAggressiveTactic()
     {
         SetUserTactic("Aggressive");
+    }
+
+    public void ToggleTacticsMenu()
+    {
+        _isTacticsMenuVisible = !_isTacticsMenuVisible;
+        SetTacticButtonsVisible(_isTacticsMenuVisible);
     }
 
     public void ChangeUserGoalie()
@@ -191,10 +199,7 @@ public class LiveMatchController : MonoBehaviour
         ConfigureText(TokenDetailsText, new Vector2(245f, -170f), new Vector2(360f, 120f), 12, 14, TextAnchor.UpperLeft);
         SetRect(RinkArea, new Vector2(0f, 150f), new Vector2(820f, 520f));
         SetButtonVisible("Speed1Button", false);
-        SetButtonVisible("LiveBalancedButton", false);
-        SetButtonVisible("LiveOffensiveButton", false);
-        SetButtonVisible("LiveDefensiveButton", false);
-        SetButtonVisible("LiveAggressiveButton", false);
+        SetTacticButtonsVisible(false);
         SetButtonVisible("ChangeGoalieButton", false);
         SetButtonVisible("PullGoalieButton", false);
         SetButtonVisible("ReturnGoalieButton", false);
@@ -204,7 +209,16 @@ public class LiveMatchController : MonoBehaviour
         SetButtonRect("SkipPeriodButton", true, new Vector2(185f, -520f), new Vector2(260f, 48f));
         SetButtonRect("SkipMatchButton", true, new Vector2(-125f, -580f), new Vector2(260f, 48f));
         SetButtonRect("FinishLiveMatchButton", true, new Vector2(165f, -580f), new Vector2(220f, 48f));
+        SetButtonRect("LiveTacticsToggleButton", true, new Vector2(395f, -580f), new Vector2(170f, 48f));
         SetButtonVisible("ExitLiveMatchButton", false);
+    }
+
+    private void SetTacticButtonsVisible(bool isVisible)
+    {
+        SetButtonVisible("LiveBalancedButton", isVisible);
+        SetButtonVisible("LiveOffensiveButton", isVisible);
+        SetButtonVisible("LiveDefensiveButton", isVisible);
+        SetButtonVisible("LiveAggressiveButton", isVisible);
     }
 
     private static void ConfigureText(Text text, Vector2 anchoredPosition, Vector2 size, int minSize, int maxSize, TextAnchor alignment)
@@ -312,12 +326,16 @@ public class LiveMatchController : MonoBehaviour
     {
         if (match.HomeStats.PowerPlaySecondsRemaining > 0)
         {
-            return "";
+            return CompactTeamName(match.HomeTeamName)
+                + " большинство: "
+                + LiveMatchConfig.FormatClock(match.HomeStats.PowerPlaySecondsRemaining);
         }
 
         if (match.AwayStats.PowerPlaySecondsRemaining > 0)
         {
-            return "";
+            return CompactTeamName(match.AwayTeamName)
+                + " большинство: "
+                + LiveMatchConfig.FormatClock(match.AwayStats.PowerPlaySecondsRemaining);
         }
 
         return "Равные составы";
@@ -400,7 +418,7 @@ public class LiveMatchController : MonoBehaviour
         }
     }
 
-    private static void SetUserTactic(string tacticName)
+    private void SetUserTactic(string tacticName)
     {
         TeamData team = GameSession.CurrentTeam;
         if (team != null)
@@ -408,5 +426,9 @@ public class LiveMatchController : MonoBehaviour
             GameSession.SetLiveMatchTactic(team.Id, tacticName, out string message);
             Debug.Log(message);
         }
+
+        _isTacticsMenuVisible = false;
+        SetTacticButtonsVisible(false);
+        Refresh(GameSession.CurrentLiveMatch);
     }
 }

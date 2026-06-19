@@ -4,9 +4,10 @@ using UnityEngine;
 
 public static class SeasonGenerator
 {
-    public const int CurrentScheduleVersion = 5;
+    public const int CurrentScheduleVersion = 6;
     public const int TargetGamesPerTeam = SalaryCapConfig.TargetGamesPerTeam;
-    private const int MaxGamesPerDay = 16;
+    private const int MaxGamesPerDay = 12;
+    private const int FallbackRegularSeasonCalendarDays = 203;
 
     public static SeasonData CreateSimpleSeason(string selectedTeamId, List<TeamData> teams)
     {
@@ -174,17 +175,17 @@ public static class SeasonGenerator
 
         Dictionary<int, HashSet<string>> teamsByDay = new Dictionary<int, HashSet<string>>();
         Dictionary<int, int> gamesByDay = new Dictionary<int, int>();
+        Dictionary<string, HashSet<int>> daysByTeam = new Dictionary<string, HashSet<int>>();
+        int calendarDays = GetRegularSeasonCalendarDayCount();
+        int scheduleCount = season == null || season.Schedule == null ? 0 : season.Schedule.Count;
 
-        foreach (ScheduleGameData game in season.Schedule)
+        for (int i = 0; i < scheduleCount; i++)
         {
-            int dayNumber = 1;
+            ScheduleGameData game = season.Schedule[i];
+            int targetDay = GetTargetDayForSlot(i, scheduleCount, calendarDays);
+            int dayNumber = FindBestDayForGame(game, targetDay, calendarDays, teamsByDay, gamesByDay, daysByTeam);
 
-            while (!CanPlaceGameOnDay(game, dayNumber, teamsByDay, gamesByDay))
-            {
-                dayNumber++;
-            }
-
-            game.DayNumber = dayNumber;
+            game.DayNumber = Mathf.Max(1, dayNumber);
 
             if (!teamsByDay.ContainsKey(dayNumber))
             {
@@ -195,9 +196,92 @@ public static class SeasonGenerator
             teamsByDay[dayNumber].Add(game.HomeTeamId);
             teamsByDay[dayNumber].Add(game.AwayTeamId);
             gamesByDay[dayNumber]++;
+            AddTeamDay(daysByTeam, game.HomeTeamId, dayNumber);
+            AddTeamDay(daysByTeam, game.AwayTeamId, dayNumber);
         }
 
         RenumberSchedule(season);
+    }
+
+    private static int GetRegularSeasonCalendarDayCount()
+    {
+        LeagueCalendarData calendar = LeagueCalendarConfig.CreateDefaultCalendar();
+        if (calendar == null
+            || !DateTime.TryParse(calendar.RegularSeasonStartDate, out DateTime startDate)
+            || !DateTime.TryParse(calendar.RegularSeasonEndDate, out DateTime endDate)
+            || endDate.Date < startDate.Date)
+        {
+            return FallbackRegularSeasonCalendarDays;
+        }
+
+        return Mathf.Max(1, (int)(endDate.Date - startDate.Date).TotalDays + 1);
+    }
+
+    private static int GetTargetDayForSlot(int slotIndex, int scheduleCount, int calendarDays)
+    {
+        if (scheduleCount <= 1 || calendarDays <= 1)
+        {
+            return 1;
+        }
+
+        float progress = slotIndex / (float)(scheduleCount - 1);
+        return Mathf.Clamp(1 + Mathf.RoundToInt((calendarDays - 1) * progress), 1, calendarDays);
+    }
+
+    private static int FindBestDayForGame(
+        ScheduleGameData game,
+        int targetDay,
+        int calendarDays,
+        Dictionary<int, HashSet<string>> teamsByDay,
+        Dictionary<int, int> gamesByDay,
+        Dictionary<string, HashSet<int>> daysByTeam)
+    {
+        int day = FindBestDayForGame(game, targetDay, calendarDays, teamsByDay, gamesByDay, daysByTeam, true);
+        if (day > 0)
+        {
+            return day;
+        }
+
+        day = FindBestDayForGame(game, targetDay, calendarDays, teamsByDay, gamesByDay, daysByTeam, false);
+        if (day > 0)
+        {
+            return day;
+        }
+
+        day = calendarDays + 1;
+        while (!CanPlaceGameOnDay(game, day, int.MaxValue, teamsByDay, gamesByDay, daysByTeam, false))
+        {
+            day++;
+        }
+
+        return day;
+    }
+
+    private static int FindBestDayForGame(
+        ScheduleGameData game,
+        int targetDay,
+        int calendarDays,
+        Dictionary<int, HashSet<string>> teamsByDay,
+        Dictionary<int, int> gamesByDay,
+        Dictionary<string, HashSet<int>> daysByTeam,
+        bool avoidBackToBack)
+    {
+        for (int radius = 0; radius < calendarDays; radius++)
+        {
+            int forwardDay = targetDay + radius;
+            if (CanPlaceGameOnDay(game, forwardDay, calendarDays, teamsByDay, gamesByDay, daysByTeam, avoidBackToBack))
+            {
+                return forwardDay;
+            }
+
+            int backwardDay = targetDay - radius;
+            if (radius > 0 && CanPlaceGameOnDay(game, backwardDay, calendarDays, teamsByDay, gamesByDay, daysByTeam, avoidBackToBack))
+            {
+                return backwardDay;
+            }
+        }
+
+        return 0;
     }
 
     private static void SortScheduleForSpacing(SeasonData season)
@@ -337,14 +421,69 @@ public static class SeasonGenerator
         Dictionary<int, HashSet<string>> teamsByDay,
         Dictionary<int, int> gamesByDay)
     {
-        if (!teamsByDay.ContainsKey(dayNumber))
+        return CanPlaceGameOnDay(game, dayNumber, int.MaxValue, teamsByDay, gamesByDay, null, false);
+    }
+
+    private static bool CanPlaceGameOnDay(
+        ScheduleGameData game,
+        int dayNumber,
+        int maxDayNumber,
+        Dictionary<int, HashSet<string>> teamsByDay,
+        Dictionary<int, int> gamesByDay,
+        Dictionary<string, HashSet<int>> daysByTeam,
+        bool avoidBackToBack)
+    {
+        if (game == null || dayNumber <= 0 || dayNumber > maxDayNumber)
         {
-            return true;
+            return false;
         }
 
-        return gamesByDay[dayNumber] < MaxGamesPerDay
-            && !teamsByDay[dayNumber].Contains(game.HomeTeamId)
-            && !teamsByDay[dayNumber].Contains(game.AwayTeamId);
+        if (teamsByDay.ContainsKey(dayNumber))
+        {
+            if (gamesByDay[dayNumber] >= MaxGamesPerDay
+                || teamsByDay[dayNumber].Contains(game.HomeTeamId)
+                || teamsByDay[dayNumber].Contains(game.AwayTeamId))
+            {
+                return false;
+            }
+        }
+
+        if (avoidBackToBack && HasAdjacentTeamGame(daysByTeam, game.HomeTeamId, dayNumber))
+        {
+            return false;
+        }
+
+        if (avoidBackToBack && HasAdjacentTeamGame(daysByTeam, game.AwayTeamId, dayNumber))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasAdjacentTeamGame(Dictionary<string, HashSet<int>> daysByTeam, string teamId, int dayNumber)
+    {
+        if (daysByTeam == null || string.IsNullOrEmpty(teamId) || !daysByTeam.TryGetValue(teamId, out HashSet<int> days))
+        {
+            return false;
+        }
+
+        return days.Contains(dayNumber - 1) || days.Contains(dayNumber + 1);
+    }
+
+    private static void AddTeamDay(Dictionary<string, HashSet<int>> daysByTeam, string teamId, int dayNumber)
+    {
+        if (daysByTeam == null || string.IsNullOrEmpty(teamId))
+        {
+            return;
+        }
+
+        if (!daysByTeam.ContainsKey(teamId))
+        {
+            daysByTeam[teamId] = new HashSet<int>();
+        }
+
+        daysByTeam[teamId].Add(dayNumber);
     }
 
     private static void ValidateSchedule(SeasonData season, List<TeamData> teams)

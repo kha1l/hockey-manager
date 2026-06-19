@@ -13,9 +13,12 @@ public static class LiveMatchConfig
 
     public const int ShootoutInitialRounds = 3;
 
-    public const int OneGoalPullGoalieSeconds = 120;
-    public const int TwoGoalPullGoalieSeconds = 180;
-    public const int ThreeGoalPullGoalieSeconds = 120;
+    public const int OneGoalPullGoalieMinSeconds = 90;
+    public const int OneGoalPullGoalieMaxSeconds = 150;
+    public const int TwoGoalPullGoalieMinSeconds = 120;
+    public const int TwoGoalPullGoalieMaxSeconds = 270;
+    public const int ThreeGoalPullGoalieMinSeconds = 270;
+    public const int ThreeGoalPullGoalieMaxSeconds = 330;
 
     public const int MaxEventFeedItems = 100;
     public const int MaxLiveEventsToStore = 300;

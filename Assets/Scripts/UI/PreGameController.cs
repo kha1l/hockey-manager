@@ -9,6 +9,8 @@ public class PreGameController : MonoBehaviour
     public Text DetailsText;
     public Text LineupText;
     public Text TacticsText;
+    public Text HomeTeamInfoText;
+    public Text AwayTeamInfoText;
     public Image HomeLogoImage;
     public Image AwayLogoImage;
     public Image HomeJerseyImage;
@@ -28,6 +30,8 @@ public class PreGameController : MonoBehaviour
         SetText(DetailsText, setup.AvailabilityMessage);
         SetText(TacticsText, "Тактика: " + setup.CurrentTacticName);
         SetText(LineupText, BuildLineupText(setup));
+        SetText(HomeTeamInfoText, setup.HomeTeamName + "\n" + setup.HomePreviewStatsText);
+        SetText(AwayTeamInfoText, setup.AwayTeamName + "\n" + setup.AwayPreviewStatsText);
         LoadImage(HomeLogoImage, setup.HomeLogoResourcePath);
         LoadImage(AwayLogoImage, setup.AwayLogoResourcePath);
         LoadImage(HomeJerseyImage, setup.HomeJerseyResourcePath);

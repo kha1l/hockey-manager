@@ -101,6 +101,38 @@ public static class ContractGenerator
         }
     }
 
+    public static void NormalizeInitialNhlPayrollToCapBand(TeamData team)
+    {
+        if (team == null)
+        {
+            return;
+        }
+
+        team.EnsurePlayers();
+        List<PlayerData> nhlPlayers = TeamRosterService.GetNhlPlayers(team);
+        if (nhlPlayers == null || nhlPlayers.Count == 0)
+        {
+            return;
+        }
+
+        foreach (PlayerData player in nhlPlayers)
+        {
+            NormalizeContract(player);
+        }
+
+        int payroll = SumPayroll(nhlPlayers);
+        if (payroll > SalaryCapConfig.SalaryCapUpperLimit)
+        {
+            ReducePayrollToCap(nhlPlayers, payroll - SalaryCapConfig.SalaryCapUpperLimit + 250000);
+        }
+
+        payroll = SumPayroll(nhlPlayers);
+        if (payroll < SalaryCapConfig.SalaryCapLowerLimit)
+        {
+            RaisePayrollToFloor(nhlPlayers, SalaryCapConfig.SalaryCapLowerLimit - payroll + 250000);
+        }
+    }
+
     private static void GetSalaryRange(int overall, out int minSalary, out int maxSalary)
     {
         if (overall < 65)
@@ -133,6 +165,146 @@ public static class ContractGenerator
 
         minSalary = 12000000;
         maxSalary = SalaryCapConfig.MaximumPlayerSalary;
+    }
+
+    private static void ReducePayrollToCap(List<PlayerData> players, int amount)
+    {
+        if (players == null || amount <= 0)
+        {
+            return;
+        }
+
+        players.Sort(CompareSalaryDepthForReduction);
+        int remaining = amount;
+        int guard = 0;
+        while (remaining > 0 && guard < 8)
+        {
+            guard++;
+            bool changed = false;
+            foreach (PlayerData player in players)
+            {
+                if (player == null || player.IsRetired)
+                {
+                    continue;
+                }
+
+                int minimum = SalaryCapConfig.LeagueMinimumSalary;
+                int reducible = player.Salary - minimum;
+                if (reducible <= 0)
+                {
+                    continue;
+                }
+
+                int reduction = RoundToNearest(Math.Min(reducible, Math.Min(remaining, 500000)), 50000);
+                if (reduction <= 0)
+                {
+                    reduction = Math.Min(reducible, remaining);
+                }
+
+                player.Salary -= reduction;
+                remaining -= reduction;
+                changed = true;
+                if (remaining <= 0)
+                {
+                    return;
+                }
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+        }
+    }
+
+    private static void RaisePayrollToFloor(List<PlayerData> players, int amount)
+    {
+        if (players == null || amount <= 0)
+        {
+            return;
+        }
+
+        players.Sort(CompareOverallForRaise);
+        int remaining = amount;
+        int guard = 0;
+        while (remaining > 0 && guard < 8)
+        {
+            guard++;
+            bool changed = false;
+            foreach (PlayerData player in players)
+            {
+                if (player == null || player.IsRetired)
+                {
+                    continue;
+                }
+
+                int room = SalaryCapConfig.MaximumPlayerSalary - player.Salary;
+                if (room <= 0)
+                {
+                    continue;
+                }
+
+                int raise = RoundToNearest(Math.Min(room, Math.Min(remaining, 750000)), 50000);
+                if (raise <= 0)
+                {
+                    raise = Math.Min(room, remaining);
+                }
+
+                player.Salary += raise;
+                remaining -= raise;
+                changed = true;
+                if (remaining <= 0)
+                {
+                    return;
+                }
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+        }
+    }
+
+    private static int SumPayroll(List<PlayerData> players)
+    {
+        int total = 0;
+        if (players == null)
+        {
+            return total;
+        }
+
+        foreach (PlayerData player in players)
+        {
+            if (player != null && !player.IsRetired)
+            {
+                total += player.Salary;
+            }
+        }
+
+        return total;
+    }
+
+    private static int CompareSalaryDepthForReduction(PlayerData left, PlayerData right)
+    {
+        int salary = (right == null ? 0 : right.Salary).CompareTo(left == null ? 0 : left.Salary);
+        if (salary != 0)
+        {
+            return salary;
+        }
+
+        return (left == null ? 99 : left.Overall).CompareTo(right == null ? 99 : right.Overall);
+    }
+
+    private static int CompareOverallForRaise(PlayerData left, PlayerData right)
+    {
+        int overall = (right == null ? 0 : right.Overall).CompareTo(left == null ? 0 : left.Overall);
+        if (overall != 0)
+        {
+            return overall;
+        }
+
+        return (right == null ? 0 : right.Potential).CompareTo(left == null ? 0 : left.Potential);
     }
 
     private static int GetContractYears(int age, Random random)

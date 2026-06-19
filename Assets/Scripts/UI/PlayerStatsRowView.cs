@@ -27,7 +27,6 @@ public class PlayerStatsRowView : MonoBehaviour
             + " | ATOI " + IceTimeConfig.FormatSeconds(stats.AverageTimeOnIceSeconds)
             + " | PPP " + stats.PowerPlayPoints
             + " | PIM " + stats.PenaltyMinutes
-            + " | " + stats.Shots
             + " | " + stats.PlusMinus
             + FormatSkaterCareer(player);
     }
@@ -46,8 +45,8 @@ public class PlayerStatsRowView : MonoBehaviour
             + " | " + stats.GoalieLosses
             + " | " + stats.GoalieOvertimeLosses
             + " | ATOI " + IceTimeConfig.FormatSeconds(stats.AverageTimeOnIceSeconds)
-            + " | " + stats.Saves
-            + " | " + stats.GoalsAgainst
+            + " | SV% " + FormatSavePercentage(stats)
+            + " | GAA " + FormatGoalsAgainstAverage(stats)
             + " | " + stats.Shutouts
             + FormatGoalieCareer(player);
     }
@@ -79,11 +78,57 @@ public class PlayerStatsRowView : MonoBehaviour
     {
         if (player == null)
         {
-            return stats == null ? "" : stats.PlayerName;
+            return stats == null ? "" : stats.PlayerName + FormatTeam(stats.TeamId);
         }
 
         string number = player.JerseyNumber > 0 ? "#" + player.JerseyNumber + " " : "";
-        return number + player.FirstName + " " + player.LastName;
+        return number + player.FirstName + " " + player.LastName + FormatTeam(player);
+    }
+
+    private static string FormatTeam(PlayerData player)
+    {
+        return player == null ? "" : FormatTeam(player.TeamId);
+    }
+
+    private static string FormatTeam(string teamId)
+    {
+        if (string.IsNullOrEmpty(teamId) || GameSession.CurrentState == null || GameSession.CurrentState.Teams == null)
+        {
+            return "";
+        }
+
+        foreach (TeamData team in GameSession.CurrentState.Teams)
+        {
+            if (team != null && team.Id == teamId)
+            {
+                string abbreviation = TeamIdentityService.GetAbbreviation(team);
+                return string.IsNullOrEmpty(abbreviation) ? "" : " [" + abbreviation + "]";
+            }
+        }
+
+        return "";
+    }
+
+    private static string FormatSavePercentage(PlayerSeasonStatsData stats)
+    {
+        if (stats == null || stats.ShotsAgainst <= 0)
+        {
+            return ".000";
+        }
+
+        float savePercentage = Mathf.Clamp01(stats.Saves / (float)stats.ShotsAgainst);
+        return savePercentage.ToString(".000");
+    }
+
+    private static string FormatGoalsAgainstAverage(PlayerSeasonStatsData stats)
+    {
+        if (stats == null || stats.GoalieGamesPlayed <= 0)
+        {
+            return "0.00";
+        }
+
+        float average = stats.GoalsAgainst / (float)stats.GoalieGamesPlayed;
+        return average.ToString("0.00");
     }
 
     private static string FormatGoalieCareer(PlayerData player)
